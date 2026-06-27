@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>N N O V A</title>
     <style>
-        /* ---- Базовые стили ---- */
+        /* ===== ГЛОБАЛЬНЫЕ СТИЛИ ===== */
         * {
             margin: 0;
             padding: 0;
@@ -14,181 +14,287 @@
         }
 
         body {
-            background: #0b0e11;
-            color: #d1d4dc;
-            padding: 12px 16px 80px 16px;
+            background: linear-gradient(145deg, #0b0e1a 0%, #161b30 100%);
+            color: #f0f2f8;
             min-height: 100vh;
+            padding: 20px 16px 90px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
-        /* ---- Шапка ---- */
+        /* ===== ОБЩИЙ КОНТЕЙНЕР ===== */
+        .container {
+            max-width: 480px;
+            width: 100%;
+        }
+
+        /* ===== ШАПКА ===== */
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 18px;
+            padding: 0 4px;
         }
         .logo {
-            font-size: 22px;
+            font-size: 26px;
             font-weight: 700;
-            color: #fff;
-            letter-spacing: 2px;
+            color: #ffffff;
+            letter-spacing: 4px;
+            text-shadow: 0 0 20px rgba(100, 130, 255, 0.3);
         }
         .status {
             font-size: 13px;
             color: #2ecc71;
             background: rgba(46, 204, 113, 0.15);
-            padding: 4px 12px;
-            border-radius: 12px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(46, 204, 113, 0.2);
+        }
+        .status::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #2ecc71;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #2ecc71;
         }
 
-        /* ---- Карточки с ценами ---- */
+        /* ===== КАРТОЧКИ ЦЕН ===== */
         .price-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
         .price-card {
-            background: #1e2329;
-            border-radius: 12px;
-            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 16px 16px 14px 16px;
+            transition: 0.2s;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
         .price-card .symbol {
             font-size: 14px;
-            color: #8b929a;
+            color: #8b94b0;
+            font-weight: 500;
+            letter-spacing: 0.5px;
         }
         .price-card .price {
-            font-size: 22px;
+            font-size: 24px;
             font-weight: 700;
             color: #fff;
-            margin-top: 2px;
+            margin: 4px 0 2px 0;
+            letter-spacing: 0.5px;
         }
         .price-card .change {
-            font-size: 13px;
+            font-size: 14px;
+            font-weight: 600;
             color: #2ecc71;
         }
         .price-card .change.negative {
-            color: #ef5350;
+            color: #ff5252;
         }
 
-        /* ---- Контейнер для графика ---- */
-        .chart-container {
-            background: #1e2329;
+        /* ===== КОНТЕЙНЕР ГРАФИКА ===== */
+        .chart-wrapper {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 20px;
+            padding: 12px 12px 8px 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 4px 10px 4px;
+        }
+        .chart-symbol {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .chart-timeframes {
+            display: flex;
+            gap: 8px;
+        }
+        .chart-timeframes button {
+            background: rgba(255, 255, 255, 0.06);
+            border: none;
+            color: #8b94b0;
+            padding: 4px 10px;
             border-radius: 12px;
-            padding: 12px;
-            margin-bottom: 16px;
-            height: 340px;
-            position: relative;
+            font-size: 12px;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 1px solid transparent;
+        }
+        .chart-timeframes button.active {
+            background: rgba(100, 130, 255, 0.2);
+            color: #fff;
+            border-color: rgba(100, 130, 255, 0.3);
+        }
+        .chart-container {
+            height: 280px;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #0f1423;
         }
         .chart-container iframe {
             width: 100%;
             height: 100%;
             border: none;
-            border-radius: 8px;
         }
 
-        /* ---- Новости ---- */
+        /* ===== НОВОСТИ ===== */
         .section-title {
             font-size: 16px;
             font-weight: 600;
             color: #fff;
             margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .section-title .see-all {
+            font-size: 13px;
+            color: #6a7bb5;
+            cursor: pointer;
         }
         .news-item {
-            background: #1e2329;
-            border-radius: 10px;
-            padding: 12px 14px;
-            margin-bottom: 8px;
-            font-size: 14px;
-            color: #d1d4dc;
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
         }
-        .news-item .time {
-            color: #8b929a;
+        .news-item .news-text {
+            font-size: 14px;
+            color: #e0e4f0;
+            line-height: 1.4;
+        }
+        .news-item .news-time {
             font-size: 12px;
-            margin-top: 4px;
+            color: #6a7bb5;
+            margin-top: 6px;
+        }
+        .news-tags {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .news-tags span {
+            background: rgba(100, 130, 255, 0.15);
+            color: #8b9bff;
+            padding: 2px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
         }
 
-        /* ---- Оповещения ---- */
+        /* ===== ОПОВЕЩЕНИЯ ===== */
         .alert-item {
-            background: #1e2329;
-            border-radius: 10px;
-            padding: 12px 14px;
-            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         .alert-item .alert-text {
             font-size: 14px;
-            color: #d1d4dc;
+            color: #e0e4f0;
         }
         .alert-item .alert-time {
             font-size: 12px;
-            color: #8b929a;
+            color: #6a7bb5;
         }
 
-        /* ---- Нижняя навигация ---- */
+        /* ===== НИЖНЯЯ НАВИГАЦИЯ ===== */
         .bottom-nav {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            background: #1e2329;
+            background: rgba(20, 26, 45, 0.92);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
             justify-content: space-around;
-            padding: 10px 0 12px 0;
-            border-top: 1px solid #2a2e39;
+            padding: 10px 0 14px 0;
+            max-width: 480px;
+            margin: 0 auto;
+            border-radius: 24px 24px 0 0;
         }
         .nav-item {
             text-align: center;
             font-size: 11px;
-            color: #8b929a;
+            color: #6a7bb5;
             cursor: pointer;
-            transition: color 0.2s;
+            transition: 0.2s;
+            user-select: none;
         }
         .nav-item.active {
             color: #fff;
         }
         .nav-item .nav-icon {
-            font-size: 20px;
+            font-size: 22px;
             display: block;
             margin-bottom: 2px;
         }
 
-        /* ---- Адаптивность (под разные телефоны) ---- */
+        /* ===== АДАПТИВНОСТЬ ===== */
         @media (max-width: 380px) {
             .price-card .price {
-                font-size: 18px;
+                font-size: 20px;
             }
             .logo {
-                font-size: 18px;
+                font-size: 22px;
+            }
+            .chart-container {
+                height: 220px;
             }
         }
         @media (min-width: 600px) {
             body {
-                padding: 20px 32px 90px 32px;
-                max-width: 500px;
-                margin: 0 auto;
+                padding: 24px 32px 100px 32px;
             }
-            .chart-container {
-                height: 400px;
+            .container {
+                max-width: 500px;
             }
         }
     </style>
 </head>
 <body>
+<div class="container">
 
     <!-- ===== ШАПКА ===== -->
     <div class="header">
         <div class="logo">N N O V A</div>
-        <span class="status">● Рынок открыт</span>
+        <div class="status">Рынок открыт</div>
     </div>
 
-    <!-- ===== ЦЕНЫ ===== -->
+    <!-- ===== КАРТОЧКИ ЦЕН ===== -->
     <div class="price-grid">
         <div class="price-card">
             <div class="symbol">BTC/USDT</div>
-            <div class="price" id="btc-price">66,842</div>
+            <div class="price" id="btc-price">66,842.15</div>
             <div class="change" id="btc-change">+2.45%</div>
         </div>
         <div class="price-card">
@@ -198,43 +304,71 @@
         </div>
     </div>
 
-    <!-- ===== ГРАФИК (TradingView) ===== -->
-    <div class="chart-container">
-        <!-- TradingView Widget -->
-        <div class="tradingview-widget-container">
-            <div id="tradingview_chart"></div>
-            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-            <script type="text/javascript">
-                new TradingView.widget({
-                    "width": "100%",
-                    "height": "100%",
-                    "symbol": "BINANCE:BTCUSDT",
-                    "interval": "60",
-                    "timezone": "Etc/UTC",
-                    "theme": "dark",
-                    "style": "1",
-                    "locale": "ru",
-                    "enable_publishing": false,
-                    "allow_symbol_change": true,
-                    "container_id": "tradingview_chart"
-                });
-            </script>
+    <!-- ===== ГРАФИК ===== -->
+    <div class="chart-wrapper">
+        <div class="chart-header">
+            <span class="chart-symbol">BTC/USDT</span>
+            <div class="chart-timeframes">
+                <button class="active">1H</button>
+                <button>4H</button>
+                <button>1Д</button>
+                <button>1Н</button>
+                <button>0:00</button>
+            </div>
+        </div>
+        <div class="chart-container">
+            <!-- TradingView Widget -->
+            <div class="tradingview-widget-container">
+                <div id="tradingview_chart"></div>
+                <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                <script type="text/javascript">
+                    new TradingView.widget({
+                        "width": "100%",
+                        "height": "100%",
+                        "symbol": "BINANCE:BTCUSDT",
+                        "interval": "60",
+                        "timezone": "Etc/UTC",
+                        "theme": "dark",
+                        "style": "1",
+                        "locale": "ru",
+                        "enable_publishing": false,
+                        "allow_symbol_change": true,
+                        "container_id": "tradingview_chart",
+                        "studies": [
+                            "MASimple@tv-basicstudies"
+                        ],
+                        "upColor": "#2962FF",
+                        "downColor": "#FF5252",
+                        "borderUpColor": "#2962FF",
+                        "borderDownColor": "#FF5252",
+                        "wickUpColor": "#2962FF",
+                        "wickDownColor": "#FF5252"
+                    });
+                </script>
+            </div>
         </div>
     </div>
 
     <!-- ===== НОВОСТИ ===== -->
-    <div class="section-title">📰 Новости</div>
-    <div class="news-item">
-        Биткоин обновил месячный максимум на фоне роста институционального спроса
-        <div class="time">2 часа назад</div>
+    <div class="section-title">
+        Новости
+        <span class="see-all">Смотреть все →</span>
     </div>
     <div class="news-item">
-        Apple представила отчёт за квартал: выручка выше ожиданий
-        <div class="time">4 часа назад</div>
+        <div class="news-text">Биткоин обновил месячный максимум на фоне роста институционального спроса</div>
+        <div class="news-time">2 часа назад</div>
+        <div class="news-tags"><span>BTC</span></div>
+    </div>
+    <div class="news-item">
+        <div class="news-text">Apple представила отчёт за квартал: выручка выше ожиданий</div>
+        <div class="news-time">4 часа назад</div>
+        <div class="news-tags"><span>AAPL</span></div>
     </div>
 
     <!-- ===== ОПОВЕЩЕНИЯ ===== -->
-    <div class="section-title" style="margin-top: 16px;">🔔 Оповещения</div>
+    <div class="section-title" style="margin-top: 16px;">
+        Оповещения
+    </div>
     <div class="alert-item">
         <span class="alert-text">BTC/USDT — Цена выше 66,500 USDT</span>
         <span class="alert-time">15:41</span>
@@ -244,38 +378,39 @@
         <span class="alert-time">15:40</span>
     </div>
 
-    <!-- ===== НИЖНЯЯ НАВИГАЦИЯ ===== -->
-    <div class="bottom-nav">
-        <div class="nav-item active">
-            <span class="nav-icon">🏠</span>
-            Обзор
-        </div>
-        <div class="nav-item">
-            <span class="nav-icon">📊</span>
-            Рынки
-        </div>
-        <div class="nav-item">
-            <span class="nav-icon">📡</span>
-            Сигналы
-        </div>
-        <div class="nav-item">
-            <span class="nav-icon">💼</span>
-            Портфель
-        </div>
-        <div class="nav-item">
-            <span class="nav-icon">👤</span>
-            Профиль
-        </div>
-    </div>
+</div>
 
-    <!-- ===== ПОДКЛЮЧЕНИЕ TELEGRAM WebApp ===== -->
-    <script>
-        // Расширяем WebApp на весь экран (убираем лишние отступы)
-        if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.expand();
-            // Отключаем сворачивание при скролле (чтобы не закрывалось случайно)
-            window.Telegram.WebApp.disableVerticalSwipes();
-        }
-    </script>
+<!-- ===== НИЖНЯЯ НАВИГАЦИЯ ===== -->
+<div class="bottom-nav">
+    <div class="nav-item active">
+        <span class="nav-icon">🏠</span>
+        Обзор
+    </div>
+    <div class="nav-item">
+        <span class="nav-icon">📊</span>
+        Рынки
+    </div>
+    <div class="nav-item">
+        <span class="nav-icon">📡</span>
+        Сигналы
+    </div>
+    <div class="nav-item">
+        <span class="nav-icon">💼</span>
+        Портфель
+    </div>
+    <div class="nav-item">
+        <span class="nav-icon">👤</span>
+        Профиль
+    </div>
+</div>
+
+<!-- ===== TELEGRAM WebApp ===== -->
+<script>
+    if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.expand();
+        window.Telegram.WebApp.disableVerticalSwipes();
+    }
+</script>
+
 </body>
 </html>
