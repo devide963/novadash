@@ -5,9 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>NOVA Trading</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/main.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/animations.css" />
@@ -17,20 +16,36 @@
     <!-- Header -->
     <header class="app-header" id="app-header">
       <div class="header-logo">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <path d="M4 14L14 4L24 14L14 24L4 14Z" stroke="#4A9EFF" stroke-width="2" fill="none"/>
-          <path d="M9 14L14 9L19 14L14 19L9 14Z" fill="#4A9EFF"/>
+        <!-- NOVA N logo matching brand image -->
+        <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="nGrad" x1="10" y1="15" x2="90" y2="85" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#38B4FF"/>
+              <stop offset="50%" stop-color="#1A7FD4"/>
+              <stop offset="100%" stop-color="#0A4FA0"/>
+            </linearGradient>
+          </defs>
+          <!-- Left vertical bar of N -->
+          <polygon points="15,15 32,15 32,85 15,85" fill="url(#nGrad)"/>
+          <!-- Diagonal stroke of N -->
+          <polygon points="32,15 68,85 85,85 49,15" fill="url(#nGrad)" opacity="0.85"/>
+          <!-- Right vertical bar of N with cut -->
+          <polygon points="68,15 85,15 85,55 68,55" fill="url(#nGrad)" opacity="0.7"/>
+          <!-- Inner shadow for 3D effect -->
+          <polygon points="32,15 49,15 68,55 51,55" fill="rgba(0,0,0,0.25)"/>
         </svg>
         <span class="logo-text">NOVA</span>
       </div>
-      <div class="header-right">
+      <div class="header-center" id="header-center">
         <div class="market-status">
           <span class="status-dot"></span>
           <span class="status-text">Открыт</span>
         </div>
-        <div class="header-time" id="header-time"></div>
+      </div>
+      <div class="header-right">
+        <div class="header-time" id="header-time">15:42:31 UTC+3</div>
         <button class="icon-btn notification-btn" id="notification-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
           </svg>
@@ -74,8 +89,8 @@
       </button>
       <button class="nav-item" data-page="portfolio">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
+          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
         <span>Портфель</span>
       </button>
@@ -89,9 +104,50 @@
     </nav>
   </div>
 
+  <!-- Notification Panel -->
+  <div class="notif-panel" id="notif-panel">
+    <div class="notif-panel-header">
+      <span class="notif-panel-title">Уведомления</span>
+      <button class="close-btn" id="close-notif">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="notif-list" id="notif-list"></div>
+  </div>
+
+  <!-- Add Asset Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal-add-asset">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Добавить актив</span>
+        <button class="close-btn" id="modal-close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- TradingView Chart Modal -->
+  <div class="chart-modal" id="chart-modal">
+    <div class="chart-modal-header">
+      <div class="chart-modal-title" id="chart-modal-title">BTC/USDT</div>
+      <button class="close-btn" id="chart-modal-close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div id="tv-widget-container"></div>
+  </div>
+
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
-  <script src="js/chart.js"></script>
+  <script src="js/subscription.js"></script>
   <script src="js/pages/overview.js"></script>
   <script src="js/pages/markets.js"></script>
   <script src="js/pages/signals.js"></script>
