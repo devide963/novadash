@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -5,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>NOVA Trading</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- TradingView widget library -->
+  <script src="https://s3.tradingview.com/tv.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/main.css" />
@@ -13,10 +16,8 @@
 </head>
 <body>
   <div id="app">
-    <!-- Header -->
     <header class="app-header" id="app-header">
       <div class="header-logo">
-        <!-- NOVA N logo matching brand image -->
         <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="nGrad" x1="10" y1="15" x2="90" y2="85" gradientUnits="userSpaceOnUse">
@@ -25,13 +26,9 @@
               <stop offset="100%" stop-color="#0A4FA0"/>
             </linearGradient>
           </defs>
-          <!-- Left vertical bar of N -->
           <polygon points="15,15 32,15 32,85 15,85" fill="url(#nGrad)"/>
-          <!-- Diagonal stroke of N -->
           <polygon points="32,15 68,85 85,85 49,15" fill="url(#nGrad)" opacity="0.85"/>
-          <!-- Right vertical bar of N with cut -->
           <polygon points="68,15 85,15 85,55 68,55" fill="url(#nGrad)" opacity="0.7"/>
-          <!-- Inner shadow for 3D effect -->
           <polygon points="32,15 49,15 68,55 51,55" fill="rgba(0,0,0,0.25)"/>
         </svg>
         <span class="logo-text">NOVA</span>
@@ -43,18 +40,17 @@
         </div>
       </div>
       <div class="header-right">
-        <div class="header-time" id="header-time">15:42:31 UTC+3</div>
+        <div class="header-time" id="header-time">--:--:-- UTC+3</div>
         <button class="icon-btn notification-btn" id="notification-btn">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
           </svg>
-          <span class="notif-badge" id="notif-badge">2</span>
+          <span class="notif-badge" id="notif-badge" style="display:none">0</span>
         </button>
       </div>
     </header>
 
-    <!-- Pages -->
     <main class="page-container" id="page-container">
       <div class="page active" id="page-overview"></div>
       <div class="page" id="page-markets"></div>
@@ -63,7 +59,6 @@
       <div class="page" id="page-profile"></div>
     </main>
 
-    <!-- Bottom Nav -->
     <nav class="bottom-nav" id="bottom-nav">
       <button class="nav-item active" data-page="overview">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -107,7 +102,7 @@
   <!-- Notification Panel -->
   <div class="notif-panel" id="notif-panel">
     <div class="notif-panel-header">
-      <span class="notif-panel-title">Уведомления</span>
+      <span class="notif-panel-title">Оповещения</span>
       <button class="close-btn" id="close-notif">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -117,7 +112,20 @@
     <div class="notif-list" id="notif-list"></div>
   </div>
 
-  <!-- Add Asset Modal -->
+  <!-- News All Panel -->
+  <div class="notif-panel" id="news-panel">
+    <div class="notif-panel-header">
+      <span class="notif-panel-title">Все новости</span>
+      <button class="close-btn" id="close-news">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="notif-list" id="news-list-all"></div>
+  </div>
+
+  <!-- Modal -->
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal" id="modal-add-asset">
       <div class="modal-header">
@@ -142,12 +150,14 @@
         </svg>
       </button>
     </div>
-    <div id="tv-widget-container"></div>
+    <div id="tv-widget-container" style="flex:1;width:100%"></div>
   </div>
 
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
   <script src="js/subscription.js"></script>
+  <script src="js/news.js"></script>
+  <script src="js/alerts.js"></script>
   <script src="js/pages/overview.js"></script>
   <script src="js/pages/markets.js"></script>
   <script src="js/pages/signals.js"></script>
