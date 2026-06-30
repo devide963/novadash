@@ -2,13 +2,15 @@ const MarketsPage = (() => {
   function getIconHtml(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     return `
-      <img src="${base}/crypto/${symbol}.svg" 
+      <svg
            alt="${symbol}" 
            width="24" 
            height="24" 
            loading="lazy"
            style="border-radius:50%;background:rgba(255,255,255,0.05)"
            onerror="this.onerror=null; this.src='${base}/stocks/${symbol}.svg'; this.onerror=function(){this.style.display='none'}">
+            <use xlink:href="src='${base}/crypto/${symbol}.svg'"></use>
+           </svg>
     `;
   }
 
