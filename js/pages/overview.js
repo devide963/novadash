@@ -1,8 +1,23 @@
 const OverviewPage = (() => {
   const priceCards = [
-    { symbol: 'BTC', pair: 'BTC/USDT', iconClass: 'btc', icon: '₿' },
-    { symbol: 'AAPL', pair: 'AAPL', iconClass: 'aapl', icon: '🍎' },
+    { symbol: 'BTC', pair: 'BTC/USDT' },
+    { symbol: 'AAPL', pair: 'AAPL' },
   ];
+
+  // Универсальная функция получения иконки с fallback
+  function getIconHtml(symbol) {
+    const base = 'https://s3-symbol-logo.tradingview.com';
+    // Пробуем крипто-папку, если не загрузится — stocks
+    return `
+      <img src="${base}/crypto/${symbol}.svg" 
+           alt="${symbol}" 
+           width="24" 
+           height="24" 
+           loading="lazy"
+           style="border-radius:50%;background:rgba(255,255,255,0.05)"
+           onerror="this.onerror=null; this.src='${base}/stocks/${symbol}.svg'; this.onerror=function(){this.style.display='none'}">
+    `;
+  }
 
   async function render() {
     const page = Utils.el('page-overview');
@@ -12,12 +27,12 @@ const OverviewPage = (() => {
           <div class="glass-card price-card" id="pcard-${c.symbol}">
             <div class="price-card-header">
               <div class="price-card-symbol">
-                <div class="price-card-icon ${c.iconClass}">${c.icon}</div>
+                ${getIconHtml(c.symbol)}
                 ${c.pair}
               </div>
             </div>
             <div class="price-value text-mono" id="pcard-val-${c.symbol}">⏳</div>
-            <div class="price-change" id="pcard-chg-${c.symbol}">—</div>
+            <div class="price-change" id="pcard-chg-${c.symbol}"></div>
           </div>
         `).join('')}
       </div>
@@ -89,18 +104,33 @@ const OverviewPage = (() => {
         list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Нет активных оповещений</div>';
         return;
       }
-      list.innerHTML = alerts.map(a => `
-        <div class="alert-item">
-          <div class="alert-icon">💰</div>
-          <div class="alert-body">
-            <div class="alert-symbol">${a.symbol}</div>
-            <div class="alert-desc">${a.condition === 'above' ? 'Выше' : 'Ниже'} $${a.price}</div>
+      list.innerHTML = alerts.map(a => {
+        const sym = a.symbol.toUpperCase();
+        // Для оповещений используем ту же логику
+        const base = 'https://s3-symbol-logo.tradingview.com';
+        const iconHtml = `
+          <img src="${base}/crypto/${sym}.svg" 
+               width="22" 
+               height="22" 
+               loading="lazy"
+               style="border-radius:50%;background:rgba(255,255,255,0.05)"
+               onerror="this.onerror=null; this.src='${base}/stocks/${sym}.svg'; this.onerror=function(){this.style.display='none'}">
+        `;
+        return `
+          <div class="alert-item">
+            <div class="alert-icon" style="background:transparent;border:none;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">
+              ${iconHtml}
+            </div>
+            <div class="alert-body">
+              <div class="alert-symbol">${a.symbol}</div>
+              <div class="alert-desc">${a.condition === 'above' ? 'Выше' : 'Ниже'} $${a.price}</div>
+            </div>
+            <div class="alert-meta">
+              <div class="alert-time">${a.interval ? a.interval + 'с' : 'одноразово'}</div>
+            </div>
           </div>
-          <div class="alert-meta">
-            <div class="alert-time">${a.interval ? a.interval + 'с' : 'одноразово'}</div>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     } catch {
       list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Ошибка загрузки</div>';
     }
