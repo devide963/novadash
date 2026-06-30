@@ -7,7 +7,7 @@ const OverviewPage = (() => {
   function getIconUrl(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     // Пробуем крипто, если не загрузится — stocks
-    return `${base}/crypto/${symbol}.svg`;
+    return `${base}/crypto/XTVC${symbol}.svg`;
   }
 
   function getIconHtml(symbol) {
