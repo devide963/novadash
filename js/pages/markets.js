@@ -2,7 +2,7 @@ const MarketsPage = (() => {
   function getIconHtml(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com/indices/';
     return `
-      <img src="${base}/crypto/${symbol}.svg" 
+      <img src="${base}/crypto/XTVC${symbol.toUpperCase()}.svg" 
            alt="${symbol}" 
            width="24" 
            height="24" 
