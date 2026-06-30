@@ -7,31 +7,28 @@ const OverviewPage = (() => {
   async function render() {
     const page = Utils.el('page-overview');
     page.innerHTML = `
-      <!-- Цены -->
       <div class="scroll-x mb-12">
         ${priceCards.map((c) => `
-          <div class="glass-card price-card" id="pcard-${c.symbol}" data-symbol="${c.symbol}">
+          <div class="glass-card price-card" id="pcard-${c.symbol}">
             <div class="price-card-header">
               <div class="price-card-symbol">
                 <div class="price-card-icon ${c.iconClass}">${c.icon}</div>
                 ${c.pair}
               </div>
             </div>
-            <div class="price-value text-mono" id="pcard-val-${c.symbol}">Загрузка...</div>
+            <div class="price-value text-mono" id="pcard-val-${c.symbol}">⏳</div>
             <div class="price-change" id="pcard-chg-${c.symbol}">—</div>
           </div>
         `).join('')}
       </div>
 
-      <!-- График -->
       <div class="glass-card mb-12" style="padding:16px">
         <div id="overview-tv-chart" style="height:280px;width:100%"></div>
       </div>
 
-      <!-- Оповещения -->
       <div class="glass-card" style="padding:16px">
         <div class="section-header">
-          <span class="section-title">🔔 Оповещения</span>
+          <span class="section-title">🔔 Мои оповещения</span>
           <button class="section-link" id="alerts-refresh-btn">Обновить</button>
         </div>
         <div id="alerts-list">Загрузка...</div>
@@ -40,12 +37,20 @@ const OverviewPage = (() => {
 
     // Загружаем цены
     for (const c of priceCards) {
-      const data = await Backend.getPrice(c.symbol);
-      const valEl = Utils.el(`pcard-val-${c.symbol}`);
-      if (data && data.price) {
-        valEl.textContent = `$${Utils.formatPrice(data.price)}`;
-      } else {
-        valEl.textContent = '❌ Ошибка';
+      try {
+        let data = await Backend.getPrice(c.symbol);
+        if (!data || !data.price) {
+          data = await Backend.getStock(c.symbol);
+        }
+        const el = Utils.el(`pcard-val-${c.symbol}`);
+        if (data && data.price) {
+          el.textContent = `$${Utils.formatPrice(data.price)}`;
+        } else {
+          el.textContent = '❌ Нет данных';
+        }
+      } catch {
+        const el = Utils.el(`pcard-val-${c.symbol}`);
+        el.textContent = '❌ Ошибка';
       }
     }
 
@@ -64,7 +69,7 @@ const OverviewPage = (() => {
     });
 
     // Загружаем оповещения
-    loadAlerts();
+    await loadAlerts();
 
     // Кнопка обновления
     Utils.el('alerts-refresh-btn')?.addEventListener('click', loadAlerts);
@@ -77,24 +82,28 @@ const OverviewPage = (() => {
       list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Войдите в Telegram</div>';
       return;
     }
-    const data = await Backend.getAlerts(userId);
-    const alerts = data.price || [];
-    if (!alerts.length) {
-      list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Нет активных оповещений</div>';
-      return;
+    try {
+      const data = await Backend.getAlerts(userId);
+      const alerts = data.price || [];
+      if (!alerts.length) {
+        list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Нет активных оповещений</div>';
+        return;
+      }
+      list.innerHTML = alerts.map(a => `
+        <div class="alert-item">
+          <div class="alert-icon">💰</div>
+          <div class="alert-body">
+            <div class="alert-symbol">${a.symbol}</div>
+            <div class="alert-desc">${a.condition === 'above' ? 'Выше' : 'Ниже'} $${a.price}</div>
+          </div>
+          <div class="alert-meta">
+            <div class="alert-time">${a.interval ? a.interval + 'с' : 'одноразово'}</div>
+          </div>
+        </div>
+      `).join('');
+    } catch {
+      list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Ошибка загрузки</div>';
     }
-    list.innerHTML = alerts.map(a => `
-      <div class="alert-item">
-        <div class="alert-icon">💰</div>
-        <div class="alert-body">
-          <div class="alert-symbol">${a.symbol}</div>
-          <div class="alert-desc">${a.condition === 'above' ? 'Выше' : 'Ниже'} $${a.price}</div>
-        </div>
-        <div class="alert-meta">
-          <div class="alert-time">${a.interval ? 'каждые '+a.interval+'с' : 'одноразово'}</div>
-        </div>
-      </div>
-    `).join('');
   }
 
   return { render };
