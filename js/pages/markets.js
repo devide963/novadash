@@ -9,7 +9,7 @@ const MarketsPage = (() => {
            loading="lazy"
            style="border-radius:50%;background:rgba(255,255,255,0.05)"
            onerror="this.onerror=null; this.src='${base}/stocks/${symbol}.svg'; this.onerror=function(){this.style.display='none'}">
-            <use xlink:href="src='${base}/crypto/${symbol}.svg'"></use>
+            <use xlink:href="${base}/crypto/${symbol}.svg"></use>
            </svg>
     `;
   }
