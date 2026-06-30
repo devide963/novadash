@@ -1,5 +1,16 @@
 const MarketsPage = (() => {
-  let marketData = [];
+  function getIconHtml(symbol) {
+    const base = 'https://s3-symbol-logo.tradingview.com';
+    return `
+      <img src="${base}/crypto/${symbol}.svg" 
+           alt="${symbol}" 
+           width="24" 
+           height="24" 
+           loading="lazy"
+           style="border-radius:50%;background:rgba(255,255,255,0.05)"
+           onerror="this.onerror=null; this.src='${base}/stocks/${symbol}.svg'; this.onerror=function(){this.style.display='none'}">
+    `;
+  }
 
   async function render() {
     const page = Utils.el('page-markets');
@@ -15,28 +26,22 @@ const MarketsPage = (() => {
         list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>';
         return;
       }
-      marketData = data;
-      list.innerHTML = data.map((d) => {
-        const icon = {
-          BTC: '₿', ETH: 'Ξ', SOL: '◎', BNB: 'B', ADA: '₳', DOGE: 'Ð', XRP: '✕',
-          AAPL: '🍎', TSLA: '⚡', NVDA: 'N', MSFT: '⬛', GOOGL: 'G', AMZN: '📦', META: 'M', SPY: 'S'
-        };
-        const pair = d.symbol;
-        return `
-          <div class="market-row">
-            <div class="market-icon">${icon[d.symbol] || '📊'}</div>
-            <div class="market-info">
-              <div class="market-name">${pair}</div>
-            </div>
-            <div class="market-price-col">
-              <div class="market-price">$${Utils.formatPrice(d.price)}</div>
-              <div class="market-change">${Utils.formatChange(d.change || 0)}</div>
-            </div>
+      list.innerHTML = data.map(d => `
+        <div class="market-row">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            ${getIconHtml(d.symbol)}
           </div>
-        `;
-      }).join('');
+          <div class="market-info">
+            <div class="market-name">${d.symbol}</div>
+          </div>
+          <div class="market-price-col">
+            <div class="market-price">$${Utils.formatPrice(d.price)}</div>
+            <div class="market-change">${Utils.formatChange(d.change || 0)}</div>
+          </div>
+        </div>
+      `).join('');
     } catch (e) {
-      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка загрузки данных</div>';
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка загрузки</div>';
     }
   }
 

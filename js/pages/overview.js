@@ -4,18 +4,21 @@ const OverviewPage = (() => {
     { symbol: 'AAPL', pair: 'AAPL' },
   ];
 
-  // Универсальная функция получения иконки с fallback
-  function getIconHtml(symbol) {
+  function getIconUrl(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
-    // Пробуем крипто-папку, если не загрузится — stocks
+    // Пробуем крипто, если не загрузится — stocks
+    return `${base}/crypto/${symbol}.svg`;
+  }
+
+  function getIconHtml(symbol) {
     return `
-      <img src="${base}/crypto/${symbol}.svg" 
+      <img src="${getIconUrl(symbol)}" 
            alt="${symbol}" 
            width="24" 
            height="24" 
            loading="lazy"
            style="border-radius:50%;background:rgba(255,255,255,0.05)"
-           onerror="this.onerror=null; this.src='${base}/stocks/${symbol}.svg'; this.onerror=function(){this.style.display='none'}">
+           onerror="this.onerror=null; this.src='${getIconUrl(symbol).replace('/crypto/', '/stocks/')}'; this.onerror=function(){this.style.display='none'}">
     `;
   }
 
@@ -106,16 +109,7 @@ const OverviewPage = (() => {
       }
       list.innerHTML = alerts.map(a => {
         const sym = a.symbol.toUpperCase();
-        // Для оповещений используем ту же логику
-        const base = 'https://s3-symbol-logo.tradingview.com';
-        const iconHtml = `
-          <img src="${base}/crypto/${sym}.svg" 
-               width="22" 
-               height="22" 
-               loading="lazy"
-               style="border-radius:50%;background:rgba(255,255,255,0.05)"
-               onerror="this.onerror=null; this.src='${base}/stocks/${sym}.svg'; this.onerror=function(){this.style.display='none'}">
-        `;
+        const iconHtml = getIconHtml(sym);
         return `
           <div class="alert-item">
             <div class="alert-icon" style="background:transparent;border:none;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">
