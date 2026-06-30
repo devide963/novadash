@@ -1,7 +1,6 @@
 // js/backend.js
 const Backend = {
-    // ЗАМЕНИ НА РЕАЛЬНЫЙ URL ТВОЕГО БОТА НА RAILWAY
-    baseUrl: 'worker-production-d2239.up.railway.app',
+    baseUrl: 'https://worker-production-d2239.up.railway.app',
 
     async getAlerts(userId) {
         try {
