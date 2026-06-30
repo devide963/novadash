@@ -4,7 +4,7 @@ const MarketsPage = (() => {
     // Пробуем крипто-путь
     const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
     // Если не загрузится — пробуем акции
-    const stockUrl = `${base}/indices/${symbol}.svg`;
+    const stockUrl = `${base}/${symbol}.svg`;
 
     return `
       <img src="${cryptoUrl}" 
