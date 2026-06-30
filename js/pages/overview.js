@@ -7,7 +7,7 @@ const OverviewPage = (() => {
   function getIconHtml(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
-    const stockUrl = `${base}/indices/${symbol}.svg`;
+    const stockUrl = `${base}/indices/${symbol.toLowerCase()}.svg`;
 
     return `
       <img src="${cryptoUrl}" 
