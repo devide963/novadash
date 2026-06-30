@@ -1,6 +1,6 @@
 const MarketsPage = (() => {
   function getIconHtml(symbol) {
-    const base = 'https://s3-symbol-logo.tradingview.com/indices/';
+    const base = 'https://s3-symbol-logo.tradingview.com';
     return `
       <img src="${base}/crypto/XTVC${symbol}.svg" 
            alt="${symbol}" 
