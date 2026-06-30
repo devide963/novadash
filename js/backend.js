@@ -1,32 +1,54 @@
-
+// js/backend.js
 const Backend = {
-    baseUrl: 'https://railway.com/project/e235088a-9562-4ba3-929a-9477b5b1daa5?environmentId=5fbe6a08-c4db-44e8-8147-0741f725bc53', // ЗАМЕНИ НА РЕАЛЬНЫЙ URL ТВОЕГО БОТА
-
-
+    // ЗАМЕНИ НА РЕАЛЬНЫЙ URL ТВОЕГО БОТА НА RAILWAY
+    baseUrl: 'worker-production-d2239.up.railway.app',
 
     async getAlerts(userId) {
-        const resp = await fetch(`${this.baseUrl}/api/alerts?user_id=${userId}`);
-        return resp.json();
+        try {
+            const resp = await fetch(`${this.baseUrl}/api/alerts?user_id=${userId}`);
+            return resp.json();
+        } catch {
+            return { price: [], volume: [] };
+        }
     },
+
     async getPrice(symbol) {
-        const resp = await fetch(`${this.baseUrl}/api/price/${symbol}`);
-        return resp.json();
+        try {
+            const resp = await fetch(`${this.baseUrl}/api/price/${symbol}`);
+            return resp.json();
+        } catch {
+            return { error: 'not found' };
+        }
     },
+
     async getStock(symbol) {
-        const resp = await fetch(`${this.baseUrl}/api/stock/${symbol}`);
-        return resp.json();
+        try {
+            const resp = await fetch(`${this.baseUrl}/api/stock/${symbol}`);
+            return resp.json();
+        } catch {
+            return { error: 'not found' };
+        }
     },
+
     async getMarkets() {
-        const resp = await fetch(`${this.baseUrl}/api/markets`);
-        return resp.json();
+        try {
+            const resp = await fetch(`${this.baseUrl}/api/markets`);
+            return resp.json();
+        } catch {
+            return [];
+        }
     },
+
     async analyzePortfolio(portfolio) {
-        const resp = await fetch(`${this.baseUrl}/api/analyze`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ portfolio })
-        });
-        return resp.json();
+        try {
+            const resp = await fetch(`${this.baseUrl}/api/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ portfolio })
+            });
+            return resp.json();
+        } catch {
+            return { error: 'AI analysis failed' };
+        }
     }
 };
-    

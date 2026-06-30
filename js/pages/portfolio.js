@@ -3,9 +3,6 @@ const PortfolioPage = (() => {
   let currentTab = 'crypto'; // 'crypto' | 'stocks' | 'analytics'
   let unsubFns = [];
 
-  // Portfolio data structure: { crypto: [...], stocks: [...] }
-  // Each asset: { symbol, name, amount, buyPrice, addedAt }
-
   function getPortfolio() {
     return Utils.storage.get(STORAGE_KEY, { crypto: [], stocks: [] });
   }
@@ -14,13 +11,32 @@ const PortfolioPage = (() => {
     Utils.storage.set(STORAGE_KEY, data);
   }
 
+  // ---- Получение реальной цены из бота ----
+  async function getRealPrice(symbol) {
+    const data = await Backend.getPrice(symbol);
+    if (data && data.price) return data.price;
+    const stock = await Backend.getStock(symbol);
+    if (stock && stock.price) return stock.price;
+    return null;
+  }
+
+  // ---- Получение цены из кэша или запрос ----
+  function getCurrentPrice(asset) {
+    return asset._currentPrice || asset.buyPrice;
+  }
+
+  function getPnlPct(asset) {
+    const cp = getCurrentPrice(asset);
+    return ((cp - asset.buyPrice) / asset.buyPrice) * 100;
+  }
+
+  // ---- Рендер ----
   function render() {
     unsubFns.forEach(fn => fn());
     unsubFns = [];
 
     const page = Utils.el('page-portfolio');
     page.innerHTML = `
-      <!-- Total summary -->
       <div class="glass-card mb-12" style="padding:0 16px 16px">
         <div class="portfolio-total-card" style="padding-bottom:0">
           <div class="portfolio-label">Общая стоимость</div>
@@ -33,18 +49,15 @@ const PortfolioPage = (() => {
         </div>
       </div>
 
-      <!-- Tabs -->
       <div class="tab-switcher">
         <button class="tab-btn${currentTab === 'crypto' ? ' active' : ''}" data-tab="crypto">Крипто</button>
         <button class="tab-btn${currentTab === 'stocks' ? ' active' : ''}" data-tab="stocks">Акции</button>
         <button class="tab-btn${currentTab === 'analytics' ? ' active' : ''}" data-tab="analytics">Аналитика</button>
       </div>
 
-      <!-- Tab content -->
       <div id="portfolio-tab-content"></div>
     `;
 
-    // Tabs
     Utils.qsa('.tab-btn', page).forEach(btn => {
       btn.addEventListener('click', () => {
         Utils.qsa('.tab-btn', page).forEach(b => b.classList.remove('active'));
@@ -55,10 +68,7 @@ const PortfolioPage = (() => {
       });
     });
 
-    // Add asset
     Utils.el('btn-add-asset')?.addEventListener('click', () => showAddModal());
-
-    // Clear
     Utils.el('btn-clear-portfolio')?.addEventListener('click', () => {
       if (confirm('Очистить весь портфель?')) {
         savePortfolio({ crypto: [], stocks: [] });
@@ -108,6 +118,13 @@ const PortfolioPage = (() => {
       return;
     }
 
+    // Обновляем цены перед рендером
+    assets.forEach(a => {
+      getRealPrice(a.symbol).then(price => {
+        if (price) a._currentPrice = price;
+      });
+    });
+
     content.innerHTML = `
       <div class="glass-card" style="padding:0 16px">
         ${assets.map((asset, i) => renderAssetRow(asset, i, assets.length)).join('')}
@@ -119,8 +136,6 @@ const PortfolioPage = (() => {
     `;
 
     Utils.el('add-more-btn')?.addEventListener('click', () => showAddModal());
-
-    // Delete on long press
     Utils.qsa('.asset-row', content).forEach((row, i) => {
       let longPress;
       row.addEventListener('touchstart', () => {
@@ -131,12 +146,10 @@ const PortfolioPage = (() => {
   }
 
   function renderAssetRow(asset, i, total) {
-    const d = MarketAPI.getPrice(asset.symbol);
-    const currentPrice = d ? d.price : asset.buyPrice;
-    const value  = currentPrice * asset.amount;
-    const pnl    = (currentPrice - asset.buyPrice) * asset.amount;
+    const currentPrice = getCurrentPrice(asset);
+    const value = currentPrice * asset.amount;
+    const pnl = (currentPrice - asset.buyPrice) * asset.amount;
     const pnlPct = ((currentPrice - asset.buyPrice) / asset.buyPrice) * 100;
-
     const iconConfig = getIconConfig(asset.symbol, asset.type);
 
     return `
@@ -159,20 +172,8 @@ const PortfolioPage = (() => {
     `;
   }
 
+  // ---- Аналитика портфеля ----
   function renderAnalytics(content) {
-    const isPro = Subscription.isPro();
-
-    if (!isPro) {
-      content.innerHTML = `
-        <div class="glass-card" style="padding:20px;position:relative">
-          ${Subscription.renderUpgradeBanner()}
-          <div id="upgrade-btns" style="margin-top:0"></div>
-        </div>
-      `;
-      bindUpgradeButtons(content);
-      return;
-    }
-
     const pf = getPortfolio();
     const allAssets = [...(pf.crypto || []), ...(pf.stocks || [])];
 
@@ -184,91 +185,49 @@ const PortfolioPage = (() => {
       return;
     }
 
-    const totalVal  = allAssets.reduce((s, a) => s + getCurrentPrice(a) * a.amount, 0);
-    const totalPnl  = allAssets.reduce((s, a) => s + (getCurrentPrice(a) - a.buyPrice) * a.amount, 0);
-    const bestAsset = [...allAssets].sort((a, b) => getPnlPct(b) - getPnlPct(a))[0];
-    const worstAsset= [...allAssets].sort((a, b) => getPnlPct(a) - getPnlPct(b))[0];
-
-    const slices = allAssets.map((a, i) => {
-      const colors = ['#3B9EFF','#34D399','#F87171','#FBBF24','#A78BFA','#60A5FA','#FB923C','#38BDF8'];
-      return { label: a.symbol, pct: (getCurrentPrice(a) * a.amount) / totalVal, color: colors[i % colors.length] };
-    });
-
+    // Показываем загрузку
     content.innerHTML = `
-      <!-- Donut -->
-      <div class="glass-card mb-12" style="padding:16px">
-        <div class="section-title mb-12">Распределение</div>
-        <div class="donut-wrapper">
-          ${renderDonut(slices)}
-          <div class="donut-legend">
-            ${slices.map(s => `
-              <div class="donut-legend-item">
-                <div class="donut-dot" style="background:${s.color}"></div>
-                ${s.label} ${(s.pct * 100).toFixed(0)}%
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-
-      <!-- Stats -->
-      <div class="glass-card mb-12" style="padding:16px">
-        <div class="section-title mb-12">Статистика</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          ${[
-            { label: 'Всего активов', val: allAssets.length, mono: false },
-            { label: 'Общая P&L', val: Utils.formatPnl(totalPnl), cls: Utils.changeClass(totalPnl), mono: true },
-            { label: 'Лучший актив', val: bestAsset ? bestAsset.symbol : '—', cls: 'change-positive', mono: false },
-            { label: 'Худший актив', val: worstAsset ? worstAsset.symbol : '—', cls: 'change-negative', mono: false },
-          ].map(item => `
-            <div style="background:rgba(255,255,255,0.04);border-radius:12px;padding:12px">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">${item.label}</div>
-              <div style="font-size:16px;font-weight:700;${item.mono ? 'font-family:var(--font-mono)' : ''}" class="${item.cls || ''}">${item.val}</div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-
-      <!-- Asset breakdown -->
-      <div class="glass-card" style="padding:0 16px">
-        <div style="padding:14px 0 0"><div class="section-title">Детали по активам</div></div>
-        ${allAssets.map((a, i) => {
-          const cp   = getCurrentPrice(a);
-          const val  = cp * a.amount;
-          const pnl  = (cp - a.buyPrice) * a.amount;
-          const pct  = ((cp - a.buyPrice) / a.buyPrice) * 100;
-          return `
-            <div>
-              ${i > 0 ? '<div class="divider"></div>' : ''}
-              <div style="padding:12px 0;display:flex;align-items:center;justify-content:space-between;gap:10px">
-                <div>
-                  <div style="font-size:14px;font-weight:600">${a.symbol}</div>
-                  <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">
-                    ${a.amount} × $${Utils.formatPrice(a.buyPrice)} → $${Utils.formatPrice(cp)}
-                  </div>
-                </div>
-                <div style="text-align:right;flex-shrink:0">
-                  <div style="font-size:14px;font-weight:600;font-family:var(--font-mono)">$${Utils.formatPrice(val)}</div>
-                  <div style="font-size:12px;font-weight:600;margin-top:2px" class="${Utils.changeClass(pct)}">
-                    ${pnl >= 0 ? '+' : ''}$${Utils.formatPrice(Math.abs(pnl))} (${Utils.formatChange(pct)})
-                  </div>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('')}
+      <div class="glass-card" style="padding:20px;text-align:center">
+        <div class="spinner" style="margin:0 auto"></div>
+        <div style="color:var(--text-secondary);margin-top:10px">Анализирую портфель...</div>
       </div>
     `;
-  }
 
-  function getCurrentPrice(asset) {
-    const d = MarketAPI.getPrice(asset.symbol);
-    return d ? d.price : asset.buyPrice;
-  }
+    const portfolioData = allAssets.map(a => ({
+      symbol: a.symbol,
+      amount: a.amount,
+      buyPrice: a.buyPrice
+    }));
 
-  function getPnlPct(asset) {
-    const cp = getCurrentPrice(asset);
-    return ((cp - asset.buyPrice) / asset.buyPrice) * 100;
+    Backend.analyzePortfolio(portfolioData).then(result => {
+      if (result.error) {
+        content.innerHTML = `
+          <div class="glass-card" style="padding:20px;text-align:center">
+            <div style="color:var(--red)">❌ ${result.error}</div>
+            <div style="color:var(--text-secondary);font-size:13px;margin-top:8px">Попробуйте позже</div>
+          </div>`;
+        return;
+      }
+
+      const analysis = result.analysis || 'Анализ не получен.';
+      content.innerHTML = `
+        <div class="glass-card" style="padding:16px">
+          <div class="section-title mb-12">Аналитика портфеля</div>
+          <div style="font-size:14px;line-height:1.7;color:var(--text-primary);white-space:pre-wrap">
+            ${analysis}
+          </div>
+        </div>
+        <button class="btn-secondary mt-12" onclick="PortfolioPage.render()" style="width:100%;padding:12px;border-radius:12px">
+          🔄 Обновить
+        </button>
+      `;
+    }).catch(() => {
+      content.innerHTML = `
+        <div class="glass-card" style="padding:20px;text-align:center">
+          <div style="color:var(--red)">❌ Ошибка подключения к AI</div>
+          <div style="color:var(--text-secondary);font-size:13px;margin-top:8px">Проверьте соединение с ботом</div>
+        </div>`;
+    });
   }
 
   function renderDonut(slices) {
@@ -292,9 +251,15 @@ const PortfolioPage = (() => {
     </svg>`;
   }
 
-  function updateTotals() {
+  async function updateTotals() {
     const pf = getPortfolio();
     const all = [...(pf.crypto || []), ...(pf.stocks || [])];
+
+    for (const asset of all) {
+      const price = await getRealPrice(asset.symbol);
+      if (price) asset._currentPrice = price;
+    }
+
     if (!all.length) {
       const tel = Utils.el('ptotal');
       const pel = Utils.el('ppnl');
@@ -302,51 +267,43 @@ const PortfolioPage = (() => {
       if (pel) { pel.textContent = 'Портфель пуст'; pel.className = 'portfolio-change text-secondary'; }
       return;
     }
-    const total = all.reduce((s, a) => s + getCurrentPrice(a) * a.amount, 0);
-    const pnl   = all.reduce((s, a) => s + (getCurrentPrice(a) - a.buyPrice) * a.amount, 0);
-    const pct   = total > 0 ? (pnl / (total - pnl)) * 100 : 0;
-    const tel   = Utils.el('ptotal');
-    const pel   = Utils.el('ppnl');
+
+    const total = all.reduce((s, a) => s + (a._currentPrice || a.buyPrice) * a.amount, 0);
+    const pnl = all.reduce((s, a) => s + ((a._currentPrice || a.buyPrice) - a.buyPrice) * a.amount, 0);
+    const pct = total > 0 ? (pnl / (total - pnl)) * 100 : 0;
+
+    const tel = Utils.el('ptotal');
+    const pel = Utils.el('ppnl');
     if (tel) tel.textContent = `$${Utils.formatPrice(total)}`;
     if (pel) {
       pel.textContent = `${pnl >= 0 ? '+' : ''}$${Utils.formatPrice(Math.abs(pnl))} (${Utils.formatChange(pct)})`;
-      pel.className   = `portfolio-change ${Utils.changeClass(pnl)}`;
+      pel.className = `portfolio-change ${Utils.changeClass(pnl)}`;
     }
   }
 
   function startLiveUpdates() {
-    const pf  = getPortfolio();
-    const all = [...(pf.crypto || []), ...(pf.stocks || [])];
-    all.forEach((asset, globalIdx) => {
-      const unsub = MarketAPI.subscribe(asset.symbol, () => {
-        updateTotals();
-        // Update visible rows
-        const pf2 = getPortfolio();
-        const list = pf2[currentTab] || [];
-        list.forEach((a, i) => {
-          if (a.symbol !== asset.symbol) return;
-          const d = MarketAPI.getPrice(a.symbol);
-          if (!d) return;
-          const val  = d.price * a.amount;
-          const pnl  = (d.price - a.buyPrice) * a.amount;
-          const pct  = ((d.price - a.buyPrice) / a.buyPrice) * 100;
-          const vEl  = Utils.el(`av-${a.symbol}-${i}`);
-          const cEl  = Utils.el(`ac-${a.symbol}-${i}`);
-          if (vEl) vEl.textContent = `$${Utils.formatPrice(val)}`;
-          if (cEl) {
-            cEl.textContent = `${pnl >= 0 ? '+' : ''}$${Utils.formatPrice(Math.abs(pnl))} (${Utils.formatChange(pct)})`;
-            cEl.className   = `asset-change ${Utils.changeClass(pct)}`;
-          }
-        });
+    setInterval(() => {
+      updateTotals();
+      const pf = getPortfolio();
+      const list = pf[currentTab] || [];
+      list.forEach((a, i) => {
+        const price = a._currentPrice || a.buyPrice;
+        const val = price * a.amount;
+        const pnl = (price - a.buyPrice) * a.amount;
+        const pct = ((price - a.buyPrice) / a.buyPrice) * 100;
+        const vEl = Utils.el(`av-${a.symbol}-${i}`);
+        const cEl = Utils.el(`ac-${a.symbol}-${i}`);
+        if (vEl) vEl.textContent = `$${Utils.formatPrice(val)}`;
+        if (cEl) {
+          cEl.textContent = `${pnl >= 0 ? '+' : ''}$${Utils.formatPrice(Math.abs(pnl))} (${Utils.formatChange(pct)})`;
+          cEl.className = `asset-change ${Utils.changeClass(pct)}`;
+        }
       });
-      unsubFns.push(unsub);
-    });
+    }, 3000);
   }
 
   function showAddModal() {
     const type = currentTab === 'stocks' ? 'stock' : 'crypto';
-
-    // Build quick-select list
     const quickPicks = type === 'crypto'
       ? ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP','AVAX']
       : ['AAPL','TSLA','NVDA','MSFT','GOOGL','AMZN','META','SPY'];
@@ -356,9 +313,7 @@ const PortfolioPage = (() => {
         <label class="form-label">Быстрый выбор</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px">
           ${quickPicks.map(s => `
-            <button class="filter-tab quick-pick" data-sym="${s}" style="border-radius:10px;font-size:12px;padding:6px 10px">
-              ${s}
-            </button>
+            <button class="filter-tab quick-pick" data-sym="${s}" style="border-radius:10px;font-size:12px;padding:6px 10px">${s}</button>
           `).join('')}
         </div>
       </div>
@@ -376,23 +331,15 @@ const PortfolioPage = (() => {
       </div>
       <button class="btn-primary" id="btn-save-asset">Добавить в портфель</button>
     `, () => {
-      // Quick picks
       Utils.qsa('.quick-pick').forEach(btn => {
         btn.addEventListener('click', () => {
           Utils.qsa('.quick-pick').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           const symInput = Utils.el('inp-symbol');
           if (symInput) symInput.value = btn.dataset.sym;
-          // Auto-fill current price
-          const d = MarketAPI.getPrice(btn.dataset.sym);
-          const priceInput = Utils.el('inp-price');
-          if (d && priceInput && !priceInput.value) {
-            priceInput.value = d.price.toFixed(2);
-          }
         });
       });
 
-      // Save
       Utils.el('btn-save-asset')?.addEventListener('click', () => {
         const symbol = (Utils.el('inp-symbol')?.value || '').trim().toUpperCase();
         const amount = parseFloat(Utils.el('inp-amount')?.value || '0');
@@ -402,7 +349,7 @@ const PortfolioPage = (() => {
         if (!amount || amount <= 0) { Utils.toast('Введите количество', 'error'); return; }
         if (!price  || price <= 0)  { Utils.toast('Введите цену покупки', 'error'); return; }
 
-        const pf  = getPortfolio();
+        const pf = getPortfolio();
         const key = type === 'crypto' ? 'crypto' : 'stocks';
         pf[key].push({ symbol, amount, buyPrice: price, type, addedAt: Date.now() });
         savePortfolio(pf);
@@ -414,7 +361,7 @@ const PortfolioPage = (() => {
   }
 
   function showDeleteAsset(idx) {
-    const pf  = getPortfolio();
+    const pf = getPortfolio();
     const key = currentTab === 'stocks' ? 'stocks' : 'crypto';
     const asset = pf[key][idx];
     if (!asset) return;
@@ -422,29 +369,6 @@ const PortfolioPage = (() => {
       pf[key].splice(idx, 1);
       savePortfolio(pf);
       render();
-    }
-  }
-
-  function bindUpgradeButtons(container) {
-    const trialBtn = container.querySelector('#btn-trial-activate');
-    if (trialBtn) {
-      trialBtn.addEventListener('click', () => {
-        const ok = Subscription.activateTrial();
-        if (ok) {
-          Utils.toast('Пробный период на 3 дня активирован! 🎉', 'success');
-          currentTab = 'analytics';
-          render();
-        }
-      });
-    }
-    const proBtn = container.querySelector('#btn-buy-pro');
-    if (proBtn) {
-      proBtn.addEventListener('click', () => {
-        Subscription.activatePro();
-        Utils.toast('NOVA Pro активирован! 🚀', 'success');
-        currentTab = 'analytics';
-        render();
-      });
     }
   }
 
