@@ -4,21 +4,19 @@ const OverviewPage = (() => {
     { symbol: 'AAPL', pair: 'AAPL' },
   ];
 
-  function getIconUrl(symbol) {
-    const base = 'https://s3-symbol-logo.tradingview.com';
-    // Пробуем крипто, если не загрузится — stocks
-    return `${base}/crypto/XTVC${symbol}.svg`;
-  }
-
   function getIconHtml(symbol) {
+    const base = 'https://s3-symbol-logo.tradingview.com';
+    const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
+    const stockUrl = `${base}/indices/${symbol}.svg`;
+
     return `
-      <img src="${getIconUrl(symbol)}" 
+      <img src="${cryptoUrl}" 
            alt="${symbol}" 
            width="24" 
            height="24" 
            loading="lazy"
            style="border-radius:50%;background:rgba(255,255,255,0.05)"
-           onerror="this.onerror=null; this.src='${getIconUrl(symbol).replace('/crypto/', '/stocks/')}'; this.onerror=function(){this.style.display='none'}">
+           onerror="this.onerror=null; this.src='${stockUrl}'; this.onerror=function(){this.style.display='none'}">
     `;
   }
 
