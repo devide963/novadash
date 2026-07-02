@@ -23,12 +23,14 @@ const MarketsPage = (() => {
     try {
       let data = await Backend.getPrice(symbol);
       if (data && data.price) {
-        priceCache[symbol] = { price: data.price, change: data.change || 0 };
+        const change = data.change !== undefined ? data.change : 0;
+        priceCache[symbol] = { price: data.price, change: change };
         return priceCache[symbol];
       }
       data = await Backend.getStock(symbol);
       if (data && data.price) {
-        priceCache[symbol] = { price: data.price, change: data.change || 0 };
+        const change = data.change !== undefined ? data.change : 0;
+        priceCache[symbol] = { price: data.price, change: change };
         return priceCache[symbol];
       }
       priceCache[symbol] = { price: 0, change: 0 };
@@ -39,36 +41,13 @@ const MarketsPage = (() => {
     }
   }
 
-  // --- Массовое получение цен (с кэшированием) ---
-  async function fetchPrices(symbols) {
-    const batchSize = 10;
-    const results = {};
-    for (let i = 0; i < symbols.length; i += batchSize) {
-      const batch = symbols.slice(i, i + batchSize);
-      const promises = batch.map(sym => fetchPrice(sym));
-      const prices = await Promise.all(promises);
-      batch.forEach((sym, idx) => {
-        results[sym] = prices[idx];
-      });
-    }
-    return results;
-  }
-
-  // --- Поиск через TradingView (для ЛЮБОГО актива) ---
-  async function searchTV(query, type) {
-    if (!query || query.length < 1) return [];
+  // --- Проверка, является ли символ криптовалютой ---
+  async function isCrypto(symbol) {
     try {
-      const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}&lang=ru&type=${type}`;
-      const resp = await fetch(url);
-      if (!resp.ok) return [];
-      const data = await resp.json();
-      return data.map(item => ({
-        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', ''),
-        fullName: item.description,
-        type: item.type
-      }));
+      const data = await Backend.getPrice(symbol);
+      return data && data.price !== undefined;
     } catch {
-      return [];
+      return false;
     }
   }
 
@@ -116,7 +95,7 @@ const MarketsPage = (() => {
       let debounceTimer;
       searchInput.addEventListener('input', (e) => {
         clearTimeout(debounceTimer);
-        const val = e.target.value.trim();
+        const val = e.target.value.trim().toUpperCase();
         if (val.length < 1) {
           searchQuery = '';
           renderTab();
@@ -143,31 +122,48 @@ const MarketsPage = (() => {
     list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
 
     try {
-      let symbols = [];
       let results = [];
 
-      // 1. Если есть поисковый запрос — ищем через TradingView (ЛЮБОЙ актив)
+      // 1. Если есть поисковый запрос — ищем через API бекенда
       if (searchQuery && searchQuery.length >= 1) {
         if (spinner) spinner.style.display = 'block';
-        const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : currentTab === 'stocks' ? 'stock' : 'forex');
+        
+        // Пытаемся получить цену напрямую через бекенд
+        const priceData = await fetchPrice(searchQuery);
         if (spinner) spinner.style.display = 'none';
 
-        if (tvResults.length === 0) {
+        if (priceData.price > 0) {
+          // Определяем тип актива (крипта или акция)
+          const isCryptoAsset = await isCrypto(searchQuery);
+          const type = isCryptoAsset ? 'crypto' : 'stocks';
+          
+          results = [{
+            symbol: searchQuery,
+            fullName: searchQuery,
+            price: priceData.price,
+            change: priceData.change || 0,
+            type: type
+          }];
+        } else {
+          // Если цена не найдена, пробуем найти через TradingView
+          const tvResults = await searchTV(searchQuery);
+          if (tvResults.length > 0) {
+            const prices = await fetchPrices(tvResults.map(item => item.symbol));
+            results = tvResults.map(item => ({
+              symbol: item.symbol,
+              fullName: item.fullName || item.symbol,
+              price: prices[item.symbol]?.price || 0,
+              change: prices[item.symbol]?.change || 0,
+              type: currentTab
+            }));
+          }
+        }
+
+        if (results.length === 0) {
           list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
           isLoading = false;
           return;
         }
-
-        symbols = tvResults.map(item => item.symbol);
-        // Получаем цены для найденных активов
-        const prices = await fetchPrices(symbols);
-        results = tvResults.map(item => ({
-          symbol: item.symbol,
-          fullName: item.fullName || item.symbol,
-          price: prices[item.symbol]?.price || 0,
-          change: prices[item.symbol]?.change || 0,
-          type: currentTab
-        }));
 
       } else {
         // 2. Без поиска — показываем расширенный список
@@ -177,8 +173,7 @@ const MarketsPage = (() => {
           forex: ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP','EURJPY','GBPJPY','AUDJPY','CADJPY','CHFJPY','EURAUD','EURCAD','EURCHF','GBPAUD','GBPCAD','GBPCHF','AUDCAD','AUDCHF','CADCHF','NZDJPY','NZDCAD','NZDCHF','EURTRY','USDTRY','USDMXN','USDZAR','USDSEK','USDNOK','USDSGD','USDHKD']
         };
 
-        symbols = allSymbols[currentTab] || [];
-        // Получаем цены для всех активов из списка
+        const symbols = allSymbols[currentTab] || [];
         const prices = await fetchPrices(symbols);
         results = symbols.map(sym => ({
           symbol: sym,
@@ -223,6 +218,24 @@ const MarketsPage = (() => {
     }
 
     isLoading = false;
+  }
+
+  // --- Поиск через TradingView (запасной вариант) ---
+  async function searchTV(query) {
+    if (!query || query.length < 1) return [];
+    try {
+      const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}&lang=ru&type=all`;
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return data.map(item => ({
+        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', ''),
+        fullName: item.description,
+        type: item.type
+      }));
+    } catch {
+      return [];
+    }
   }
 
   return { render };
