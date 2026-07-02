@@ -2,21 +2,43 @@ const MarketsPage = (() => {
   const FINNHUB_KEY = 'd934s4pr01qpou39j2ggd934s4pr01qpou39j2h0';
   let currentTab = 'crypto';
   let searchQuery = '';
+  let allAssets = [];
+  let isLoading = false;
 
   // --- Получение иконки ---
   function getIconHtml(symbol, type) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     if (type === 'crypto') {
-      const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
-      return `<img src="${cryptoUrl}" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
-    } else if (type === 'stocks') {
-      const stockUrl = `https://finnhub.io/api/logo?symbol=${symbol}&token=${FINNHUB_KEY}`;
-      return `<img src="${stockUrl}" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
+      return `<img src="${base}/crypto/XTVC${symbol}.svg" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
+    } else if (type === 'stock') {
+      return `<img src="https://finnhub.io/api/logo?symbol=${symbol}&token=${FINNHUB_KEY}" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
     } else {
       return `<div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#3B9EFF,#7B5FFF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px">${symbol.slice(0,3)}</div>`;
     }
   }
-  // --- Рендер ---
+
+  // --- Поиск через TradingView ---
+  async function searchTV(query, type) {
+    if (!query || query.length < 1) return [];
+    try {
+      // TradingView search API (публичный)
+      const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}&lang=ru&type=${type}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return data.map(item => ({
+        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', ''),
+        fullName: item.description,
+        type: item.type,
+        price: 0,
+        change: 0
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  // --- Основной рендер ---
   async function render() {
     const page = Utils.el('page-markets');
     page.innerHTML = `
@@ -26,7 +48,8 @@ const MarketsPage = (() => {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input type="text" placeholder="Поиск актива..." id="market-search" autocomplete="off" />
+        <input type="text" placeholder="Поиск актива (BTC, AAPL, EURUSD...)" id="market-search" autocomplete="off" />
+        <div id="search-spinner" style="display:none;width:16px;height:16px;border:2px solid var(--glass-border);border-top-color:var(--blue-primary);border-radius:50%;animation:spin .7s linear infinite"></div>
       </div>
 
       <div class="filter-tabs">
@@ -40,7 +63,7 @@ const MarketsPage = (() => {
       <div id="markets-list">Загрузка...</div>
     `;
 
-    // Переключение вкладок
+    // Вкладки
     Utils.qsa('.filter-tab', page).forEach(btn => {
       btn.addEventListener('click', () => {
         Utils.qsa('.filter-tab', page).forEach(b => b.classList.remove('active'));
@@ -55,11 +78,22 @@ const MarketsPage = (() => {
 
     // Поиск
     const searchInput = Utils.el('market-search');
+    const spinner = Utils.el('search-spinner');
     if (searchInput) {
-      searchInput.addEventListener('input', Utils.debounce((e) => {
-        searchQuery = e.target.value.trim().toUpperCase();
-        renderTab();
-      }, 300));
+      let debounceTimer;
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        const val = e.target.value.trim();
+        if (val.length < 1) {
+          searchQuery = '';
+          renderTab();
+          return;
+        }
+        debounceTimer = setTimeout(() => {
+          searchQuery = val;
+          renderTab();
+        }, 300);
+      });
     }
 
     await renderTab();
@@ -67,54 +101,108 @@ const MarketsPage = (() => {
 
   async function renderTab() {
     const list = Utils.el('markets-list');
+    const spinner = Utils.el('search-spinner');
+    if (spinner) spinner.style.display = 'none';
+
     list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
 
     try {
-      const data = await Backend.getMarkets();
-      if (!Array.isArray(data)) {
-        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>';
-        return;
-      }
+      let results = [];
 
-      // Фильтруем по типу (заглушка, т.к. бекенд пока не возвращает тип)
-      let filtered = data;
-      if (currentTab === 'crypto') {
-        filtered = data.filter(item => ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP','AVAX','DOT','LINK','MATIC','UNI','ATOM','FTM','NEAR','ARB','OP','INJ','SEI','APT','SUI','RNDR','GRT','AAVE'].includes(item.symbol));
-      } else if (currentTab === 'stocks') {
-        filtered = data.filter(item => ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','BRK.B','JPM','V','JNJ','WMT','PG','MA','UNH','HD','DIS','NFLX','PYPL','ADBE','CRM','ORCL','IBM','CSCO','KO','PEP','MCD','NKE','SBUX','T','VZ','SPY','QQQ','GLD','SLV'].includes(item.symbol));
+      // 1. Если есть поисковый запрос — ищем через TradingView
+      if (searchQuery && searchQuery.length >= 1) {
+        if (spinner) spinner.style.display = 'block';
+        const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : currentTab === 'stocks' ? 'stock' : 'forex');
+        if (spinner) spinner.style.display = 'none';
+
+        // Получаем цены для найденных активов
+        const symbols = tvResults.map(r => r.symbol);
+        let priceMap = {};
+        if (symbols.length > 0) {
+          try {
+            const priceData = await Backend.getMarkets();
+            if (Array.isArray(priceData)) {
+              priceData.forEach(item => {
+                priceMap[item.symbol] = { price: item.price, change: item.change || 0 };
+              });
+            }
+          } catch {}
+        }
+
+        results = tvResults.map(item => ({
+          symbol: item.symbol,
+          fullName: item.fullName || item.symbol,
+          price: priceMap[item.symbol]?.price || 0,
+          change: priceMap[item.symbol]?.change || 0,
+          type: currentTab
+        }));
+
+        if (results.length === 0) {
+          list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
+          return;
+        }
+
       } else {
-        // Валюты
-        filtered = data.filter(item => ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP'].includes(item.symbol));
+        // 2. Нет поиска — показываем список популярных активов
+        const data = await Backend.getMarkets();
+        if (!Array.isArray(data)) {
+          list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>';
+          return;
+        }
+
+        // Популярные активы для каждой вкладки (расширенный список)
+        const popularSymbols = {
+          crypto: ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP','AVAX','DOT','LINK','MATIC','UNI','ATOM','FTM','NEAR','ARB','OP','INJ','SEI','APT','SUI','RNDR','GRT','AAVE','MKR','CRV','ICP','FIL','VET','EOS','NEO','XLM','ALGO','HBAR','KAS','ETC','LTC','BCH','BSV','ZEC','XMR','DASH','XTZ','ZIL','EGLD','FLOW','THETA','HNT','KSM','WAVES','NEXO','CRO','LEO','OKB','BTT','HOT','ONE','ENJ','CHR','SAND','MANA','AXS','YFI','COMP','AAVE','SUSHI','CAKE','BAKE','LRC','ZRX','BAT','KAVA','SCRT','ROSE','CFX','CKB','ONT','IOST','ALGO','HBAR','XDC','QNT','DGB','SC','BTM','NANO','RVN','DCR','ZEN','XZC','PIVX','PART','QTUM','STEEM','LISK','ARDR','WAN','VET','VTHO'],
+          stocks: ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','BRK.B','JPM','V','JNJ','WMT','PG','MA','UNH','HD','DIS','NFLX','PYPL','ADBE','CRM','ORCL','IBM','CSCO','KO','PEP','MCD','NKE','SBUX','T','VZ','SPY','QQQ','GLD','SLV','BA','CAT','CVX','XOM','GE','GS','HON','INTC','MMM','MRK','PFE','RTX','TMO','UNP','UPS','WBA','WFC','ABT','AMGN','AXP','BLK','C','COP','DE','F','GM','IBM','JCI','LMT','LOW','MA','MCD','MDT','MET','MMM','MS','NEE','NKE','NOV','PEP','PFE','PG','PM','QCOM','RTX','SBUX','T','TGT','TMO','TMUS','UNH','UNP','UPS','USB','VZ','WBA','WFC','XOM','ZTS'],
+          forex: ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP','EURJPY','GBPJPY','AUDJPY','CADJPY','CHFJPY','EURAUD','EURCAD','EURCHF','GBPAUD','GBPCAD','GBPCHF','AUDCAD','AUDCHF','CADCHF','NZDJPY','NZDCAD','NZDCHF','EURTRY','USDTRY','USDMXN','USDZAR','USDSEK','USDNOK','USDSGD','USDHKD']
+        };
+
+        let filtered = data.filter(item => popularSymbols[currentTab].includes(item.symbol));
+
+        // Если в бекенде нет некоторых активов — добавляем их с нулевой ценой
+        const existingSymbols = new Set(filtered.map(a => a.symbol));
+        const missing = popularSymbols[currentTab].filter(s => !existingSymbols.has(s));
+        missing.forEach(sym => {
+          filtered.push({ symbol: sym, price: 0, change: 0 });
+        });
+
+        results = filtered.map(item => ({
+          symbol: item.symbol,
+          fullName: item.symbol,
+          price: item.price || 0,
+          change: item.change || 0,
+          type: currentTab
+        }));
       }
 
-      // Поиск
-      if (searchQuery) {
-        filtered = filtered.filter(item => item.symbol.toUpperCase().includes(searchQuery));
-      }
+      // Сортируем: сначала те, у кого есть цена
+      results.sort((a, b) => {
+        if (a.price > 0 && b.price === 0) return -1;
+        if (a.price === 0 && b.price > 0) return 1;
+        return a.symbol.localeCompare(b.symbol);
+      });
 
-      if (filtered.length === 0) {
-        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ничего не найдено</div>';
-        return;
-      }
+      // Ограничиваем вывод (чтобы не перегружать)
+      const displayResults = results.slice(0, 200);
 
-      list.innerHTML = filtered.map(item => `
+      list.innerHTML = displayResults.map(item => `
         <div class="market-row">
           <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
             ${getIconHtml(item.symbol, currentTab)}
           </div>
           <div class="market-info">
             <div class="market-name">${item.symbol}</div>
-            <div class="market-full">${item.symbol}</div>
+            <div class="market-full">${item.fullName || item.symbol}</div>
           </div>
           <div class="market-price-col">
-            <div class="market-price">$${Utils.formatPrice(item.price)}</div>
-            <div class="market-change ${Utils.changeClass(item.change || 0)}">${Utils.formatChange(item.change || 0)}</div>
+            <div class="market-price">${item.price > 0 ? '$' + Utils.formatPrice(item.price) : '—'}</div>
+            <div class="market-change ${Utils.changeClass(item.change)}">${item.price > 0 ? Utils.formatChange(item.change) : '—'}</div>
           </div>
         </div>
       `).join('');
 
     } catch (e) {
-      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка загрузки</div>';
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка загрузки данных</div>';
     }
   }
 
