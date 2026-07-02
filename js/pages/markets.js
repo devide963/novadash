@@ -3,6 +3,7 @@ const MarketsPage = (() => {
   let currentTab = 'crypto';
   let searchQuery = '';
   let priceCache = {};
+  let isLoading = false;
 
   // --- Иконки ---
   function getIconHtml(symbol, type) {
@@ -16,20 +17,18 @@ const MarketsPage = (() => {
     }
   }
 
-  // --- Получение цены для одного актива ---
+  // --- Получение цены и изменения через бекенд ---
   async function fetchPrice(symbol) {
     if (priceCache[symbol]) return priceCache[symbol];
     try {
-      // Сначала пробуем крипто-цену
       let data = await Backend.getPrice(symbol);
       if (data && data.price) {
-        priceCache[symbol] = { price: data.price, change: 0 };
+        priceCache[symbol] = { price: data.price, change: data.change || 0 };
         return priceCache[symbol];
       }
-      // Если нет — пробуем акцию
       data = await Backend.getStock(symbol);
       if (data && data.price) {
-        priceCache[symbol] = { price: data.price, change: 0 };
+        priceCache[symbol] = { price: data.price, change: data.change || 0 };
         return priceCache[symbol];
       }
       priceCache[symbol] = { price: 0, change: 0 };
@@ -40,7 +39,7 @@ const MarketsPage = (() => {
     }
   }
 
-  // --- Массовое получение цен ---
+  // --- Массовое получение цен (с кэшированием) ---
   async function fetchPrices(symbols) {
     const batchSize = 10;
     const results = {};
@@ -53,6 +52,24 @@ const MarketsPage = (() => {
       });
     }
     return results;
+  }
+
+  // --- Поиск через TradingView (для ЛЮБОГО актива) ---
+  async function searchTV(query, type) {
+    if (!query || query.length < 1) return [];
+    try {
+      const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}&lang=ru&type=${type}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return data.map(item => ({
+        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', ''),
+        fullName: item.description,
+        type: item.type
+      }));
+    } catch {
+      return [];
+    }
   }
 
   // --- Рендер ---
@@ -80,6 +97,7 @@ const MarketsPage = (() => {
       <div id="markets-list">Загрузка...</div>
     `;
 
+    // Вкладки
     Utils.qsa('.filter-tab', page).forEach(btn => {
       btn.addEventListener('click', () => {
         Utils.qsa('.filter-tab', page).forEach(b => b.classList.remove('active'));
@@ -92,6 +110,7 @@ const MarketsPage = (() => {
       });
     });
 
+    // Поиск
     const searchInput = Utils.el('market-search');
     if (searchInput) {
       let debounceTimer;
@@ -114,6 +133,9 @@ const MarketsPage = (() => {
   }
 
   async function renderTab() {
+    if (isLoading) return;
+    isLoading = true;
+
     const list = Utils.el('markets-list');
     const spinner = Utils.el('search-spinner');
     if (spinner) spinner.style.display = 'none';
@@ -124,68 +146,83 @@ const MarketsPage = (() => {
       let symbols = [];
       let results = [];
 
-      // 1. Поиск
+      // 1. Если есть поисковый запрос — ищем через TradingView (ЛЮБОЙ актив)
       if (searchQuery && searchQuery.length >= 1) {
         if (spinner) spinner.style.display = 'block';
-        const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(searchQuery)}&lang=ru&type=${currentTab === 'crypto' ? 'crypto' : currentTab === 'stocks' ? 'stock' : 'forex'}`;
-        const resp = await fetch(url);
+        const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : currentTab === 'stocks' ? 'stock' : 'forex');
         if (spinner) spinner.style.display = 'none';
-        if (resp.ok) {
-          const data = await resp.json();
-          symbols = data.map(item => item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', ''));
-        }
-        if (symbols.length === 0) {
+
+        if (tvResults.length === 0) {
           list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
+          isLoading = false;
           return;
         }
+
+        symbols = tvResults.map(item => item.symbol);
+        // Получаем цены для найденных активов
+        const prices = await fetchPrices(symbols);
+        results = tvResults.map(item => ({
+          symbol: item.symbol,
+          fullName: item.fullName || item.symbol,
+          price: prices[item.symbol]?.price || 0,
+          change: prices[item.symbol]?.change || 0,
+          type: currentTab
+        }));
+
       } else {
-        // 2. Без поиска — расширенный список
+        // 2. Без поиска — показываем расширенный список
         const allSymbols = {
           crypto: ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP','AVAX','DOT','LINK','MATIC','UNI','ATOM','FTM','NEAR','ARB','OP','INJ','SEI','APT','SUI','RNDR','GRT','AAVE','MKR','CRV','ICP','FIL','VET','EOS','NEO','XLM','ALGO','HBAR','KAS','ETC','LTC','BCH','BSV','ZEC','XMR','DASH','XTZ','ZIL','EGLD','FLOW','THETA','HNT','KSM','WAVES','NEXO','CRO','LEO','OKB','BTT','HOT','ONE','ENJ','CHR','SAND','MANA','AXS','YFI','COMP','SUSHI','CAKE','BAKE','LRC','ZRX','BAT','KAVA','SCRT','ROSE','CFX','CKB','ONT','IOST','ALGO','HBAR','XDC','QNT','DGB','SC','BTM','NANO','RVN','DCR','ZEN','XZC','PIVX','PART','QTUM','STEEM','LISK','ARDR','WAN','VET','VTHO'],
           stocks: ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','BRK.B','JPM','V','JNJ','WMT','PG','MA','UNH','HD','DIS','NFLX','PYPL','ADBE','CRM','ORCL','IBM','CSCO','KO','PEP','MCD','NKE','SBUX','T','VZ','SPY','QQQ','GLD','SLV','BA','CAT','CVX','XOM','GE','GS','HON','INTC','MMM','MRK','PFE','RTX','TMO','UNP','UPS','WBA','WFC','ABT','AMGN','AXP','BLK','C','COP','DE','F','GM','IBM','JCI','LMT','LOW','MA','MCD','MDT','MET','MMM','MS','NEE','NKE','NOV','PEP','PFE','PG','PM','QCOM','RTX','SBUX','T','TGT','TMO','TMUS','UNH','UNP','UPS','USB','VZ','WBA','WFC','XOM','ZTS'],
           forex: ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP','EURJPY','GBPJPY','AUDJPY','CADJPY','CHFJPY','EURAUD','EURCAD','EURCHF','GBPAUD','GBPCAD','GBPCHF','AUDCAD','AUDCHF','CADCHF','NZDJPY','NZDCAD','NZDCHF','EURTRY','USDTRY','USDMXN','USDZAR','USDSEK','USDNOK','USDSGD','USDHKD']
         };
+
         symbols = allSymbols[currentTab] || [];
+        // Получаем цены для всех активов из списка
+        const prices = await fetchPrices(symbols);
+        results = symbols.map(sym => ({
+          symbol: sym,
+          fullName: sym,
+          price: prices[sym]?.price || 0,
+          change: prices[sym]?.change || 0,
+          type: currentTab
+        }));
       }
 
-      // Получаем цены для всех символов (даже если их нет в бекенде)
-      const prices = await fetchPrices(symbols);
-
-      results = symbols.map(sym => ({
-        symbol: sym,
-        fullName: sym,
-        price: prices[sym]?.price || 0,
-        change: prices[sym]?.change || 0,
-        type: currentTab
-      }));
-
-      // Сортируем: сначала с ценой
+      // Сортируем: сначала с ценой, потом по алфавиту
       results.sort((a, b) => {
         if (a.price > 0 && b.price === 0) return -1;
         if (a.price === 0 && b.price > 0) return 1;
         return a.symbol.localeCompare(b.symbol);
       });
 
-      // Показываем ВСЕ результаты (без ограничений)
-      list.innerHTML = results.map(item => `
-        <div class="market-row">
-          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            ${getIconHtml(item.symbol, currentTab)}
+      // Ограничиваем вывод для производительности (первые 300)
+      const displayResults = results.slice(0, 300);
+
+      list.innerHTML = displayResults.map(item => {
+        const changeColor = item.change > 0 ? 'change-positive' : item.change < 0 ? 'change-negative' : '';
+        return `
+          <div class="market-row">
+            <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              ${getIconHtml(item.symbol, currentTab)}
+            </div>
+            <div class="market-info">
+              <div class="market-name">${item.symbol}</div>
+              <div class="market-full">${item.fullName || item.symbol}</div>
+            </div>
+            <div class="market-price-col">
+              <div class="market-price">${item.price > 0 ? '$' + Utils.formatPrice(item.price) : '—'}</div>
+              <div class="market-change ${changeColor}">${item.price > 0 ? (item.change > 0 ? '+' : '') + item.change.toFixed(2) + '%' : '—'}</div>
+            </div>
           </div>
-          <div class="market-info">
-            <div class="market-name">${item.symbol}</div>
-            <div class="market-full">${item.fullName || item.symbol}</div>
-          </div>
-          <div class="market-price-col">
-            <div class="market-price">${item.price > 0 ? '$' + Utils.formatPrice(item.price) : '—'}</div>
-            <div class="market-change ${Utils.changeClass(item.change)}">${item.price > 0 ? Utils.formatChange(item.change) : '—'}</div>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
 
     } catch (e) {
       list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка загрузки данных</div>';
     }
+
+    isLoading = false;
   }
 
   return { render };
