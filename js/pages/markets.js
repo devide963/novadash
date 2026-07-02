@@ -11,14 +11,14 @@ const MarketsPage = (() => {
     const base = 'https://s3-symbol-logo.tradingview.com';
     if (type === 'crypto') {
       return `<img src="${base}/crypto/XTVC${symbol}.svg" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
-    } else if (type === 'stocks') {
+    } else if (type === 'stocks' || type === 'stocks_usa' || type === 'stocks_ru') {
       return `<img src="https://finnhub.io/api/logo?symbol=${symbol}&token=${FINNHUB_KEY}" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
     } else {
       return `<div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#3B9EFF,#7B5FFF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px">${symbol.slice(0,3)}</div>`;
     }
   }
 
-  // --- Получение цены и изменения через бекенд ---
+  // --- Получение цены и изменения ---
   async function fetchPrice(symbol) {
     if (priceCache[symbol]) return priceCache[symbol];
     try {
@@ -79,7 +79,8 @@ const MarketsPage = (() => {
   const POPULAR = {
     crypto: ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP','AVAX','DOT','LINK','MATIC','UNI','ATOM','FTM','NEAR','ARB','OP','INJ','SEI','APT','SUI','RNDR','GRT','AAVE','MKR','CRV','ICP','FIL','VET','EOS','NEO','XLM','ALGO','HBAR','KAS','ETC','LTC','BCH','BSV','ZEC','XMR','DASH','XTZ','ZIL','EGLD','FLOW','THETA','HNT','KSM','WAVES','NEXO','CRO','LEO','OKB','BTT','HOT','ONE','ENJ','CHR','SAND','MANA','AXS','YFI','COMP','SUSHI','CAKE','BAKE','LRC','ZRX','BAT','KAVA','SCRT','ROSE','CFX','CKB','ONT','IOST','ALGO','HBAR','XDC','QNT','DGB','SC','BTM','NANO','RVN','DCR','ZEN','XZC','PIVX','PART','QTUM','STEEM','LISK','ARDR','WAN','VET','VTHO'],
     usa_stocks: ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','BRK.B','JPM','V','JNJ','WMT','PG','MA','UNH','HD','DIS','NFLX','PYPL','ADBE','CRM','ORCL','IBM','CSCO','KO','PEP','MCD','NKE','SBUX','T','VZ','SPY','QQQ','GLD','SLV','BA','CAT','CVX','XOM','GE','GS','HON','INTC','MMM','MRK','PFE','RTX','TMO','UNP','UPS','WBA','WFC','ABT','AMGN','AXP','BLK','C','COP','DE','F','GM','JCI','LMT','LOW','MDT','MET','MS','NEE','NOV','PM','QCOM','SBUX','TGT','TMUS','UNH','UNP','USB','XOM','ZTS'],
-    ru_stocks: ['SBER','GAZP','ROSN','LKOH','NVTK','MGNT','YNDX','TCS','PLZL','CHMF','NLMK','SNGS','TATN','SURG','IRAO','FEES','RUAL','NORN','TRNFP','RTKM','MOEX','BSPB','MRKV','MSNG','MRKP','VKCO','OZON','FIVE','MAGN','FLOT','ASTR','GLTR','DSKY','RBCM','SMLT','LENT','MTS','MVID','YPRO','PASH','TECH']
+    ru_stocks: ['SBER','GAZP','ROSN','LKOH','NVTK','MGNT','YNDX','TCS','PLZL','CHMF','NLMK','SNGS','TATN','SURG','IRAO','FEES','RUAL','NORN','TRNFP','RTKM','MOEX','BSPB','MRKV','MSNG','MRKP','VKCO','OZON','FIVE','MAGN','FLOT','ASTR','GLTR','DSKY','RBCM','SMLT','LENT','MTS','MVID','YPRO','PASH','TECH'],
+    forex: ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP','EURJPY','GBPJPY','AUDJPY','CADJPY','CHFJPY','EURAUD','EURCAD','EURCHF','GBPAUD','GBPCAD','GBPCHF','AUDCAD','AUDCHF','CADCHF','NZDJPY','NZDCAD','NZDCHF','EURTRY','USDTRY','USDMXN','USDZAR','USDSEK','USDNOK','USDSGD','USDHKD']
   };
 
   // --- Рендер ---
@@ -96,17 +97,18 @@ const MarketsPage = (() => {
         <div id="search-spinner" style="display:none;width:16px;height:16px;border:2px solid var(--glass-border);border-top-color:var(--blue-primary);border-radius:50%;animation:spin .7s linear infinite"></div>
       </div>
 
+      <!-- Основные вкладки -->
       <div class="filter-tabs">
-        ${['crypto', 'stocks'].map(tab => `
+        ${['crypto', 'stocks', 'forex'].map(tab => `
           <button class="filter-tab ${tab === currentTab ? 'active' : ''}" data-tab="${tab}">
-            ${tab === 'crypto' ? '🪙 Криптовалюта' : '📈 Акции'}
+            ${tab === 'crypto' ? '🪙 Криптовалюта' : tab === 'stocks' ? '📈 Акции' : '💱 Валюта'}
           </button>
         `).join('')}
-        <button class="filter-tab ${currentTab === 'forex' ? 'active' : ''}" data-tab="forex">💱 Валюта</button>
       </div>
 
+      <!-- Подвкладки для акций -->
       ${currentTab === 'stocks' ? `
-        <div class="filter-tabs mt-8" style="gap:4px">
+        <div class="filter-tabs mt-8" style="gap:4px;margin-bottom:12px">
           ${[
             { id: 'usa', label: '🇺🇸 Американские' },
             { id: 'ru', label: '🇷🇺 Российские' }
@@ -121,7 +123,7 @@ const MarketsPage = (() => {
       <div id="markets-list">Загрузка...</div>
     `;
 
-    // Переключение вкладок
+    // Переключение основных вкладок
     Utils.qsa('.filter-tab[data-tab]', page).forEach(btn => {
       btn.addEventListener('click', () => {
         Utils.qsa('.filter-tab[data-tab]', page).forEach(b => b.classList.remove('active'));
@@ -191,12 +193,13 @@ const MarketsPage = (() => {
         if (spinner) spinner.style.display = 'none';
 
         if (priceData.price > 0) {
-          const isCryptoAsset = priceData.change !== undefined;
           let type = 'crypto';
-          if (!isCryptoAsset) {
-            // Если это акция — определяем по символу (US или RU)
-            const isRu = searchQuery.length <= 4 && /^[A-Z]{2,4}$/.test(searchQuery);
+          if (currentTab === 'stocks') {
+            // Определяем, к какому рынку относится акция (US или RU)
+            const isRu = /^[A-Z]{2,4}$/.test(searchQuery) && !['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','SPY','QQQ','GLD','SLV'].includes(searchQuery);
             type = isRu ? 'stocks_ru' : 'stocks_usa';
+          } else if (currentTab === 'forex') {
+            type = 'forex';
           }
           results = [{
             symbol: searchQuery,
@@ -233,7 +236,7 @@ const MarketsPage = (() => {
         } else if (currentTab === 'stocks') {
           symbols = currentSubTab === 'usa' ? POPULAR.usa_stocks : POPULAR.ru_stocks;
         } else {
-          symbols = ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP','EURJPY','GBPJPY','AUDJPY','CADJPY','CHFJPY','EURAUD','EURCAD','EURCHF','GBPAUD','GBPCAD','GBPCHF','AUDCAD','AUDCHF','CADCHF','NZDJPY','NZDCAD','NZDCHF','EURTRY','USDTRY','USDMXN','USDZAR','USDSEK','USDNOK','USDSGD','USDHKD'];
+          symbols = POPULAR.forex;
         }
 
         const prices = await fetchPrices(symbols);
@@ -257,9 +260,10 @@ const MarketsPage = (() => {
 
       list.innerHTML = displayResults.map(item => {
         const changeColor = item.change > 0 ? 'change-positive' : item.change < 0 ? 'change-negative' : '';
-        const type = currentTab === 'stocks' 
-          ? (currentSubTab === 'usa' ? 'stocks' : 'stocks') 
-          : currentTab === 'crypto' ? 'crypto' : 'forex';
+        let type = currentTab;
+        if (currentTab === 'stocks') {
+          type = 'stocks';
+        }
         return `
           <div class="market-row">
             <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
