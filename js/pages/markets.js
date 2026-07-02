@@ -16,7 +16,6 @@ const MarketsPage = (() => {
       return `<div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#3B9EFF,#7B5FFF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px">${symbol.slice(0,3)}</div>`;
     }
   }
-
   // --- Рендер ---
   async function render() {
     const page = Utils.el('page-markets');
