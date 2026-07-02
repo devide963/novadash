@@ -1,10 +1,13 @@
 const MarketsPage = (() => {
+  // Finnhub API key
+  const FINNHUB_KEY = 'd934s4pr01qpou39j2ggd934s4pr01qpou39j2h0';
+
   function getIconHtml(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
-    // Пробуем крипто-путь
+    // Криптовалюты — TradingView
     const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
-    // Если не загрузится — пробуем акции
-    const stockUrl = `${base}/${symbol}.svg`;
+    // Акции — Finnhub
+    const stockUrl = `https://finnhub.io/api/logo?symbol=${symbol}&token=${FINNHUB_KEY}`;
 
     return `
       <img src="${cryptoUrl}" 

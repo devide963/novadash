@@ -4,10 +4,13 @@ const OverviewPage = (() => {
     { symbol: 'AAPL', pair: 'AAPL' },
   ];
 
+  // Finnhub API key
+  const FINNHUB_KEY = 'd934s4pr01qpou39j2ggd934s4pr01qpou39j2h0';
+
   function getIconHtml(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
-    const stockUrl = `${base}/${symbol.toLowerCase()}.svg`;
+    const stockUrl = `https://finnhub.io/api/logo?symbol=${symbol}&token=${FINNHUB_KEY}`;
 
     return `
       <img src="${cryptoUrl}" 
