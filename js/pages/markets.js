@@ -92,15 +92,19 @@ const MarketsPage = (() => {
       </div>
 
       <div class="filter-tabs">
-        ${['crypto', 'stocks', 'forex'].map(tab => `
-          <button class="filter-tab ${tab === currentTab ? 'active' : ''}" data-tab="${tab}">
-            ${tab === 'crypto' ? '🪙 Криптовалюта' : tab === 'stocks' ? '📈 Акции' : '💱 Валюта'}
+        ${[
+          { id: 'crypto', label: '🪙 Криптовалюта' },
+          { id: 'stocks', label: '📈 Акции' },
+          { id: 'forex', label: '💱 Валюта' }
+        ].map(tab => `
+          <button class="filter-tab ${tab.id === currentTab ? 'active' : ''}" data-tab="${tab.id}">
+            ${tab.label}
           </button>
         `).join('')}
       </div>
 
       ${currentTab === 'stocks' ? `
-        <div class="filter-tabs mt-8" style="gap:4px;margin-bottom:12px">
+        <div class="filter-tabs mt-8" style="gap:4px;margin-bottom:12px;display:flex;flex-wrap:wrap">
           ${[
             { id: 'usa', label: '🇺🇸 Американские' },
             { id: 'ru', label: '🇷🇺 Российские' }
