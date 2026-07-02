@@ -6,10 +6,128 @@ const MarketsPage = (() => {
   let priceCache = {};
   let isLoading = false;
 
-  // ... (getIconHtml, fetchPrice, fetchPrices, searchTV, POPULAR — без изменений) ...
+  function getIconHtml(symbol, type) {
+    const base = 'https://s3-symbol-logo.tradingview.com';
+    if (type === 'crypto') {
+      return `<img src="${base}/crypto/XTVC${symbol}.svg" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
+    } else if (type === 'stocks' || type === 'stocks_usa' || type === 'stocks_ru') {
+      return `<img src="https://finnhub.io/api/logo?symbol=${symbol}&token=${FINNHUB_KEY}" alt="${symbol}" width="24" height="24" loading="lazy" style="border-radius:50%;background:rgba(255,255,255,0.05);object-fit:contain" onerror="this.style.display='none'">`;
+    } else {
+      return `<div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#3B9EFF,#7B5FFF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px">${symbol.slice(0,3)}</div>`;
+    }
+  }
+
+  async function fetchPrice(symbol) {
+    if (priceCache[symbol]) return priceCache[symbol];
+    try {
+      let data = await Backend.getPrice(symbol);
+      if (data && data.price) {
+        const change = data.change !== undefined && data.change !== null ? data.change : null;
+        priceCache[symbol] = { price: data.price, change: change };
+        return priceCache[symbol];
+      }
+      data = await Backend.getStock(symbol);
+      if (data && data.price) {
+        const change = data.change !== undefined && data.change !== null ? data.change : null;
+        priceCache[symbol] = { price: data.price, change: change };
+        return priceCache[symbol];
+      }
+      priceCache[symbol] = { price: 0, change: null };
+      return priceCache[symbol];
+    } catch (e) {
+      console.warn(`Ошибка получения цены для ${symbol}:`, e);
+      priceCache[symbol] = { price: 0, change: null };
+      return priceCache[symbol];
+    }
+  }
+
+  async function fetchPrices(symbols) {
+    const results = {};
+    if (!symbols || symbols.length === 0) return results;
+    const batchSize = 10;
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      const batch = symbols.slice(i, i + batchSize);
+      const promises = batch.map(sym => fetchPrice(sym));
+      const prices = await Promise.all(promises);
+      batch.forEach((sym, idx) => {
+        results[sym] = prices[idx];
+      });
+    }
+    return results;
+  }
+
+  async function searchTV(query, type) {
+    if (!query || query.length < 1) return [];
+    try {
+      const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}&lang=ru&type=${type}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return data.map(item => ({
+        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', '').replace('MOEX:', ''),
+        fullName: item.description,
+        type: item.type
+      }));
+    } catch (e) {
+      console.warn('Ошибка поиска TV:', e);
+      return [];
+    }
+  }
+
+  const POPULAR = {
+    crypto: ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP','AVAX','DOT','LINK','MATIC','UNI','ATOM','FTM','NEAR','ARB','OP','INJ','SEI','APT','SUI','RNDR','GRT','AAVE','MKR','CRV','ICP','FIL','VET','EOS','NEO','XLM','ALGO','HBAR','KAS','ETC','LTC','BCH','BSV','ZEC','XMR','DASH','XTZ','ZIL','EGLD','FLOW','THETA','HNT','KSM','WAVES','NEXO','CRO','LEO','OKB','BTT','HOT','ONE','ENJ','CHR','SAND','MANA','AXS','YFI','COMP','SUSHI','CAKE','BAKE','LRC','ZRX','BAT','KAVA','SCRT','ROSE','CFX','CKB','ONT','IOST','ALGO','HBAR','XDC','QNT','DGB','SC','BTM','NANO','RVN','DCR','ZEN','XZC','PIVX','PART','QTUM','STEEM','LISK','ARDR','WAN','VET','VTHO'],
+    usa_stocks: ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','BRK.B','JPM','V','JNJ','WMT','PG','MA','UNH','HD','DIS','NFLX','PYPL','ADBE','CRM','ORCL','IBM','CSCO','KO','PEP','MCD','NKE','SBUX','T','VZ','SPY','QQQ','GLD','SLV','BA','CAT','CVX','XOM','GE','GS','HON','INTC','MMM','MRK','PFE','RTX','TMO','UNP','UPS','WBA','WFC','ABT','AMGN','AXP','BLK','C','COP','DE','F','GM','JCI','LMT','LOW','MDT','MET','MS','NEE','NOV','PM','QCOM','SBUX','TGT','TMUS','UNH','UNP','USB','XOM','ZTS'],
+    ru_stocks: ['SBER','GAZP','ROSN','LKOH','NVTK','MGNT','YNDX','TCS','PLZL','CHMF','NLMK','SNGS','TATN','SURG','IRAO','FEES','RUAL','NORN','TRNFP','RTKM','MOEX','BSPB','MRKV','MSNG','MRKP','VKCO','OZON','FIVE','MAGN','FLOT','ASTR','GLTR','DSKY','RBCM','SMLT','LENT','MTS','MVID','YPRO','PASH','TECH'],
+    forex: ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','NZDUSD','EURGBP','EURJPY','GBPJPY','AUDJPY','CADJPY','CHFJPY','EURAUD','EURCAD','EURCHF','GBPAUD','GBPCAD','GBPCHF','AUDCAD','AUDCHF','CADCHF','NZDJPY','NZDCAD','NZDCHF','EURTRY','USDTRY','USDMXN','USDZAR','USDSEK','USDNOK','USDSGD','USDHKD']
+  };
+
+  async function render() {
+    const page = Utils.el('page-markets');
+    page.innerHTML = `
+      <div class="section-title mb-12">Рынки</div>
+      
+      <div class="search-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" placeholder="Поиск актива (BTC, AAPL, SBER...)" id="market-search" autocomplete="off" />
+        <div id="search-spinner" style="display:none;width:16px;height:16px;border:2px solid var(--glass-border);border-top-color:var(--blue-primary);border-radius:50%;animation:spin .7s linear infinite"></div>
+      </div>
+
+      <div class="tabs-container" id="tabs-container">
+        <!-- Сюда будем рендерить вкладки -->
+      </div>
+
+      <div id="markets-list">Загрузка...</div>
+    `;
+
+    renderTabs();
+
+    const searchInput = Utils.el('market-search');
+    if (searchInput) {
+      let debounceTimer;
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        const val = e.target.value.trim().toUpperCase();
+        if (val.length < 1) {
+          searchQuery = '';
+          renderTab();
+          return;
+        }
+        debounceTimer = setTimeout(() => {
+          searchQuery = val;
+          renderTab();
+        }, 300);
+      });
+    }
+
+    await renderTab();
+  }
 
   function renderTabs() {
-    const page = Utils.el('page-markets');
+    const container = Utils.el('tabs-container');
+    if (!container) return;
+
     const tabsHtml = `
       <div class="filter-tabs">
         ${[
@@ -35,16 +153,11 @@ const MarketsPage = (() => {
         </div>
       ` : ''}
     `;
-    // Обновляем только блок с вкладками, не трогая остальное
-    const tabsContainer = page.querySelector('.tabs-container');
-    if (tabsContainer) {
-      tabsContainer.innerHTML = tabsHtml;
-      bindTabEvents();
-    }
-  }
 
-  function bindTabEvents() {
+    container.innerHTML = tabsHtml;
+
     const page = Utils.el('page-markets');
+    
     Utils.qsa('.filter-tab[data-tab]', page).forEach(btn => {
       btn.addEventListener('click', () => {
         Utils.qsa('.filter-tab[data-tab]', page).forEach(b => b.classList.remove('active'));
@@ -73,49 +186,6 @@ const MarketsPage = (() => {
     });
   }
 
-  async function render() {
-    const page = Utils.el('page-markets');
-    page.innerHTML = `
-      <div class="section-title mb-12">Рынки</div>
-      
-      <div class="search-bar">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input type="text" placeholder="Поиск актива (BTC, AAPL, SBER...)" id="market-search" autocomplete="off" />
-        <div id="search-spinner" style="display:none;width:16px;height:16px;border:2px solid var(--glass-border);border-top-color:var(--blue-primary);border-radius:50%;animation:spin .7s linear infinite"></div>
-      </div>
-
-      <div class="tabs-container">
-        <!-- Сюда будем рендерить вкладки -->
-      </div>
-
-      <div id="markets-list">Загрузка...</div>
-    `;
-
-    // Инициализация поиска
-    const searchInput = Utils.el('market-search');
-    if (searchInput) {
-      let debounceTimer;
-      searchInput.addEventListener('input', (e) => {
-        clearTimeout(debounceTimer);
-        const val = e.target.value.trim().toUpperCase();
-        if (val.length < 1) {
-          searchQuery = '';
-          renderTab();
-          return;
-        }
-        debounceTimer = setTimeout(() => {
-          searchQuery = val;
-          renderTab();
-        }, 300);
-      });
-    }
-
-    renderTabs();
-    await renderTab();
-  }
-
   async function renderTab() {
     if (isLoading) return;
     isLoading = true;
@@ -134,7 +204,7 @@ const MarketsPage = (() => {
         const priceData = await fetchPrice(searchQuery);
         if (spinner) spinner.style.display = 'none';
 
-        if (priceData.price > 0) {
+        if (priceData && priceData.price > 0) {
           results = [{
             symbol: searchQuery,
             fullName: searchQuery,
@@ -144,7 +214,7 @@ const MarketsPage = (() => {
           }];
         } else {
           const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : 'stock');
-          if (tvResults.length > 0) {
+          if (tvResults && tvResults.length > 0) {
             const prices = await fetchPrices(tvResults.map(item => item.symbol));
             results = tvResults.map(item => ({
               symbol: item.symbol,
@@ -156,7 +226,7 @@ const MarketsPage = (() => {
           }
         }
 
-        if (results.length === 0) {
+        if (!results || results.length === 0) {
           list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
           isLoading = false;
           return;
@@ -172,14 +242,22 @@ const MarketsPage = (() => {
           symbols = POPULAR.forex;
         }
 
-        const prices = await fetchPrices(symbols);
-        results = symbols.map(sym => ({
-          symbol: sym,
-          fullName: sym,
-          price: prices[sym]?.price || 0,
-          change: prices[sym]?.change || null,
-          type: currentTab
-        }));
+        if (symbols && symbols.length > 0) {
+          const prices = await fetchPrices(symbols);
+          results = symbols.map(sym => ({
+            symbol: sym,
+            fullName: sym,
+            price: prices[sym]?.price || 0,
+            change: prices[sym]?.change || null,
+            type: currentTab
+          }));
+        }
+      }
+
+      if (!results || results.length === 0) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных для отображения</div>';
+        isLoading = false;
+        return;
       }
 
       results.sort((a, b) => {
@@ -197,9 +275,7 @@ const MarketsPage = (() => {
         const changeText = changeValue !== null && changeValue !== undefined ? (changeValue > 0 ? '+' : '') + changeValue.toFixed(2) + '%' : '—';
         const priceText = item.price > 0 ? '$' + Utils.formatPrice(item.price) : '—';
         let type = currentTab;
-        if (currentTab === 'stocks') {
-          type = 'stocks';
-        }
+        if (currentTab === 'stocks') type = 'stocks';
         return `
           <div class="market-row">
             <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
