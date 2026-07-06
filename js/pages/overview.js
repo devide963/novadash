@@ -113,7 +113,7 @@ const OverviewPage = (() => {
     // Кнопка "Все новости"
     Utils.el('news-show-all-btn')?.addEventListener('click', showNewsPanel);
 
-    // Обновляем отображение новостей каждые 30 секунд (быстрое обновление)
+    // Обновляем отображение новостей каждые 30 секунд
     if (newsInterval) clearInterval(newsInterval);
     newsInterval = setInterval(() => {
       updateNewsPreview();
@@ -121,10 +121,8 @@ const OverviewPage = (() => {
   }
 
   function renderNewsPreview() {
-    // Пытаемся сначала получить новости из кэша
     let news = NewsManager.getLatest(3);
     
-    // Если кэш пуст, пробуем загрузить из localStorage
     if (!news || !news.length) {
       try {
         const raw = localStorage.getItem('nova_news_cache');
@@ -138,12 +136,9 @@ const OverviewPage = (() => {
             }));
           }
         }
-      } catch (e) {
-        // Игнорируем ошибки
-      }
+      } catch (e) {}
     }
 
-    // Если всё равно нет новостей — показываем заглушку
     if (!news || !news.length) {
       return '<div style="text-align:center;color:var(--text-muted);padding:12px 0;font-size:13px;">Новости загружаются...</div>';
     }
@@ -170,7 +165,6 @@ const OverviewPage = (() => {
         stocks: '#3B9EFF',
       }[n.tag] || '#3B9EFF';
 
-      // Показываем точное время публикации (Московское)
       const timeDisplay = n.time || formatExactTime(n.pubDate);
 
       return `
@@ -188,13 +182,16 @@ const OverviewPage = (() => {
     }).join('');
   }
 
-  // Функция для отображения точного времени публикации (Московское UTC+3)
+  // Московское время (UTC+3)
   function formatExactTime(date) {
     try {
-      // Принудительно переводим в московское время (UTC+3)
-      const mskTime = new Date(date.getTime() + 3 * 60 * 60 * 1000);
+      const d = new Date(date);
       const now = new Date();
-      const nowMsk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+      
+      // Переводим в московское время (UTC+3)
+      const mskOffset = 3 * 60 * 60 * 1000;
+      const mskTime = new Date(d.getTime() + mskOffset);
+      const nowMsk = new Date(now.getTime() + mskOffset);
       
       const today = new Date(nowMsk.getFullYear(), nowMsk.getMonth(), nowMsk.getDate());
       const yesterday = new Date(today);
@@ -226,61 +223,66 @@ const OverviewPage = (() => {
   }
 
   function showNewsPanel() {
-    let panel = Utils.el('news-panel');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'news-panel';
-      panel.className = 'notif-panel';
-      panel.innerHTML = `
-        <div class="notif-panel-header">
-          <span class="notif-panel-title">📰 Все новости</span>
-          <button class="close-btn" id="close-news-panel-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div class="news-filter-tabs" style="padding:12px 16px 0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;">
+    const panel = Utils.el('news-panel');
+    if (!panel) return;
+
+    // Добавляем фильтры в панель (если их нет)
+    let filterContainer = panel.querySelector('.news-filter-tabs');
+    if (!filterContainer) {
+      const header = panel.querySelector('.notif-panel-header');
+      if (header) {
+        const filters = document.createElement('div');
+        filters.className = 'news-filter-tabs';
+        filters.style.cssText = 'padding:12px 16px 0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;';
+        filters.innerHTML = `
           <button class="filter-tab active" data-filter="all">Все</button>
           <button class="filter-tab" data-filter="crypto">🪙 Крипто</button>
           <button class="filter-tab" data-filter="stocks">📊 Акции</button>
           <button class="filter-tab" data-filter="us">🇺🇸 США</button>
           <button class="filter-tab" data-filter="ru">🇷🇺 Россия</button>
-        </div>
-        <div class="notif-list" id="news-list-all">
-          ${NewsManager.renderNewsList('all')}
-        </div>
-      `;
-      document.getElementById('app').appendChild(panel);
+        `;
+        header.parentNode.insertBefore(filters, header.nextSibling);
 
-      // Фильтры
-      panel.querySelectorAll('.filter-tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-          panel.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          const filter = btn.dataset.filter;
-          const list = panel.querySelector('#news-list-all');
-          if (list) {
-            list.innerHTML = NewsManager.renderNewsList(filter);
-          }
+        // Фильтры
+        filters.querySelectorAll('.filter-tab').forEach(btn => {
+          btn.addEventListener('click', () => {
+            filters.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const filter = btn.dataset.filter;
+            const list = panel.querySelector('#news-list-all');
+            if (list) {
+              list.innerHTML = NewsManager.renderNewsList(filter);
+            }
+          });
         });
-      });
-
-      // Закрытие панели - ИСПРАВЛЕНО!
-      panel.querySelector('#close-news-panel-btn').addEventListener('click', () => {
-        panel.classList.remove('open');
-      });
+      }
     }
-    panel.classList.add('open');
+
     // Обновляем список при открытии
     const list = panel.querySelector('#news-list-all');
     if (list) {
       const activeFilter = panel.querySelector('.filter-tab.active')?.dataset.filter || 'all';
       list.innerHTML = NewsManager.renderNewsList(activeFilter);
     }
+
+    // Открываем панель
+    panel.classList.add('open');
+
+    // Крестик уже есть в index.html с id="close-news"
+    // Он уже должен работать, так как в index.html есть обработчик?
+    // Добавим обработчик на случай, если его нет
+    const closeBtn = panel.querySelector('#close-news');
+    if (closeBtn) {
+      // Удаляем старые обработчики, чтобы не дублировать
+      const newCloseBtn = closeBtn.cloneNode(true);
+      closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+      newCloseBtn.addEventListener('click', () => {
+        panel.classList.remove('open');
+      });
+    }
   }
 
-  // === ОПОВЕЩЕНИЯ (не трогал) ===
+  // === ОПОВЕЩЕНИЯ ===
   async function loadAlerts() {
     const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const list = Utils.el('alerts-list');

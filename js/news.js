@@ -90,25 +90,31 @@ const NewsManager = (() => {
     return def;
   }
 
+  // Московское время (UTC+3)
   function formatExactTime(dateStr) {
     try {
       const d = new Date(dateStr);
       const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      const mskOffset = 3 * 60 * 60 * 1000;
+      const mskTime = new Date(d.getTime() + mskOffset);
+      const nowMsk = new Date(now.getTime() + mskOffset);
+      
+      const today = new Date(nowMsk.getFullYear(), nowMsk.getMonth(), nowMsk.getDate());
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
       
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const hours = String(mskTime.getHours()).padStart(2, '0');
+      const minutes = String(mskTime.getMinutes()).padStart(2, '0');
       const timeStr = `${hours}:${minutes}`;
       
-      if (d >= today) {
+      if (mskTime >= today) {
         return `Сегодня ${timeStr}`;
-      } else if (d >= yesterday) {
+      } else if (mskTime >= yesterday) {
         return `Вчера ${timeStr}`;
       } else {
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(mskTime.getDate()).padStart(2, '0');
+        const month = String(mskTime.getMonth() + 1).padStart(2, '0');
         return `${day}.${month} ${timeStr}`;
       }
     } catch { return 'недавно'; }
@@ -150,20 +156,15 @@ const NewsManager = (() => {
   }
 
   async function fetchAll(force = false) {
-    if (!force && cachedNews.length) {
-      return cachedNews;
-    }
-
+    if (!force && cachedNews.length) return cachedNews;
     if (!cachedNews.length) {
       const loaded = loadFromCache();
       if (loaded) return cachedNews;
     }
-
     if (cachedNews.length && !force) {
       refreshInBackground();
       return cachedNews;
     }
-
     return await refreshNews();
   }
 
@@ -270,7 +271,7 @@ const NewsManager = (() => {
   function startPolling() {
     setInterval(() => {
       refreshInBackground();
-    }, 3 * 60 * 1000);
+    }, 30 * 1000);
   }
 
   function getLatest(n = 4) {
@@ -282,7 +283,7 @@ const NewsManager = (() => {
     startPolling();
     setTimeout(() => {
       refreshInBackground();
-    }, 2000);
+    }, 1000);
   }
 
   return {
