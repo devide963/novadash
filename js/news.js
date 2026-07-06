@@ -4,50 +4,48 @@ const NewsManager = (() => {
   let currentFilter = 'all';
   let isRefreshing = false;
 
-  // === ТОЛЬКО РУССКИЕ ИСТОЧНИКИ + КРИПТА НА АНГЛИЙСКОМ ===
-  const FEEDS = [
-    // === РОССИЙСКИЕ НОВОСТИ (главные) ===
+  // === ИСТОЧНИКИ НОВОСТЕЙ (только рабочие) ===
+  const NEWS_SOURCES = [
+    // РБК - главные новости
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
       tag: 'ru',
-      parse: parseRss2json,
+      source: 'РБК',
     },
+    // Ведомости
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.vedomosti.ru%2Frss%2Fnews%2F',
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.vedomosti.ru%2Frss%2Fnews%2F',
       tag: 'ru',
-      parse: parseRss2json,
+      source: 'Ведомости',
     },
+    // Коммерсантъ
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
       tag: 'ru',
-      parse: parseRss2json,
+      source: 'Коммерсантъ',
     },
+    // Интерфакс
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.interfax.ru%2Frss.asp%3Fsec%3D1',
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.interfax.ru%2Frss.asp%3Fsec%3D1',
       tag: 'ru',
-      parse: parseRss2json,
+      source: 'Интерфакс',
     },
-    // === КРИПТО-НОВОСТИ (на английском, но фильтруем по тегам) ===
+    // Cointelegraph (крипто) через allorigins
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fcointelegraph.com%2Frss&count=20',
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fcointelegraph.com%2Frss',
       tag: 'crypto',
-      parse: parseRss2json,
+      source: 'Cointelegraph',
     },
+    // MarketWatch (акции США) через allorigins
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fdecrypt.co%2Ffeed&count=15',
-      tag: 'crypto',
-      parse: parseRss2json,
-    },
-    // === АКЦИИ США (фильтруем по тегам) ===
-    {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F&count=15',
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F',
       tag: 'us',
-      parse: parseRss2json,
+      source: 'MarketWatch',
     },
   ];
 
-  // === РУССКИЙ ФОЛБЕК (реальные новости, если API не работает) ===
-  function getRussianFallbackNews() {
+  // === ФОЛБЕК-НОВОСТИ (реальные русские новости) ===
+  function getFallbackNews() {
     const now = new Date();
     const ago = (m) => new Date(now - m * 60000);
     return [
@@ -64,45 +62,78 @@ const NewsManager = (() => {
     ];
   }
 
-  function parseRss2json(data, defaultTag) {
-    if (!data || !data.items) return [];
-    return data.items
-      .map(item => ({
-        title: cleanTitle(item.title || ''),
-        link:  item.link  || '',
-        time:  formatExactTime(item.pubDate),
-        tag:   guessTag(item.title, defaultTag),
-        source: data.feed?.title || defaultTag,
-        pubDate: new Date(item.pubDate || Date.now()),
-      }))
-      .filter(n => {
-        // Фильтруем: только крипта, акции США или Россия
-        if (n.tag === 'crypto' || n.tag === 'us' || n.tag === 'ru') {
-          return n.title.length > 15;
-        }
-        return false;
+  // === ПАРСИНГ RSS ИЗ XML ===
+  function parseRSS(xmlText, defaultTag, sourceName) {
+    try {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlText, 'text/xml');
+      
+      // Проверяем на ошибки парсинга
+      if (xml.querySelector('parsererror')) {
+        return [];
+      }
+      
+      const items = xml.querySelectorAll('item');
+      const results = [];
+      
+      items.forEach(item => {
+        const title = item.querySelector('title')?.textContent || '';
+        const link = item.querySelector('link')?.textContent || '';
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+        const description = item.querySelector('description')?.textContent || '';
+        
+        // Пропускаем короткие заголовки
+        if (title.length < 15) return;
+        
+        // Определяем тег
+        const tag = guessTag(title + ' ' + description, defaultTag);
+        
+        // Оставляем только нужные категории
+        if (tag !== 'crypto' && tag !== 'us' && tag !== 'ru') return;
+        
+        results.push({
+          title: cleanTitle(title),
+          link: link,
+          time: formatExactTime(pubDate),
+          tag: tag,
+          source: sourceName || defaultTag,
+          pubDate: new Date(pubDate || Date.now()),
+        });
       });
+      
+      return results;
+    } catch (e) {
+      console.warn('Ошибка парсинга RSS:', e);
+      return [];
+    }
   }
 
   function cleanTitle(t) {
-    return t.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;/g,"'").replace(/&quot;/g,'"').trim();
+    return t
+      .replace(/&amp;/g,'&')
+      .replace(/&lt;/g,'<')
+      .replace(/&gt;/g,'>')
+      .replace(/&#39;/g,"'")
+      .replace(/&quot;/g,'"')
+      .replace(/\[.*?\]/g, '') // убираем [текст] в начале
+      .trim();
   }
 
   function guessTag(title, def) {
     const t = (title || '').toUpperCase();
     
-    // === КРИПТО-КЛЮЧЕВЫЕ СЛОВА ===
-    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|BITCOIN SPOT ETF/i.test(t)) {
+    // КРИПТО
+    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|BITCOIN SPOT ETF|COINBASE|BINANCE|CRYPTO/i.test(t)) {
       return 'crypto';
     }
     
-    // === РОССИЯ (поиск по русским буквам и ключевым словам) ===
-    if (/[А-Яа-я]/.test(t) || /РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН/i.test(t)) {
+    // РОССИЯ
+    if (/[А-Яа-я]/.test(t) && /РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ/i.test(t)) {
       return 'ru';
     }
     
-    // === АКЦИИ США ===
-    if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|DOW|NASDAQ|FED|RATE|FOMC|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|GE|FORD|GM|DISNEY|NFLX|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|TEXAS INSTRUMENTS|BROADCOM|CISCO|HP|DELL|EBAY|PAYPAL|SQUARE|SHOPIFY|SNOWFLAKE|PALANTIR/i.test(t)) {
+    // США
+    if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|DOW|NASDAQ|FED|RATE|FOMC|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|FORD|GM|DISNEY|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|BROADCOM|CISCO/i.test(t)) {
       return 'us';
     }
     
@@ -139,6 +170,7 @@ const NewsManager = (() => {
     } catch { return 'недавно'; }
   }
 
+  // === КЭШ ===
   function loadFromCache() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -174,6 +206,7 @@ const NewsManager = (() => {
     }
   }
 
+  // === ОСНОВНЫЕ ФУНКЦИИ ===
   async function fetchAll(force = false) {
     if (!force && cachedNews.length) {
       refreshInBackground();
@@ -198,14 +231,30 @@ const NewsManager = (() => {
     try {
       console.log('🔄 Начинаем обновление новостей...');
       
-      const results = await Promise.allSettled(
-        FEEDS.map(f =>
-          fetch(f.url, { signal: AbortSignal.timeout(5000) })
-            .then(r => r.json())
-            .then(data => f.parse(data, f.tag))
-            .catch(() => [])
-        )
-      );
+      // Загружаем все источники параллельно
+      const promises = NEWS_SOURCES.map(async (source) => {
+        try {
+          const response = await fetch(source.url, {
+            signal: AbortSignal.timeout(8000),
+          });
+          
+          if (!response.ok) {
+            console.warn(`❌ ${source.source}: HTTP ${response.status}`);
+            return [];
+          }
+          
+          const text = await response.text();
+          const parsed = parseRSS(text, source.tag, source.source);
+          console.log(`✅ ${source.source}: ${parsed.length} новостей`);
+          return parsed;
+          
+        } catch (e) {
+          console.warn(`❌ ${source.source}: ${e.message}`);
+          return [];
+        }
+      });
+      
+      const results = await Promise.allSettled(promises);
       
       let all = [];
       results.forEach(r => {
@@ -214,16 +263,18 @@ const NewsManager = (() => {
         }
       });
 
-      console.log(`📰 Загружено ${all.length} новостей`);
+      console.log(`📰 Всего загружено ${all.length} новостей`);
 
-      // Если ничего не загрузилось — используем русский фолбек
+      // Если ничего не загрузилось — используем фолбек
       if (!all.length) {
-        console.log('⚠️ Используем русский фолбек');
-        all = getRussianFallbackNews();
+        console.log('⚠️ Используем фолбек-новости');
+        all = getFallbackNews();
       }
 
-      // Сортировка и дедупликация
+      // Сортировка по дате (свежие сверху)
       all.sort((a, b) => b.pubDate - a.pubDate);
+      
+      // Дедупликация по заголовку
       const seen = new Set();
       all = all.filter(n => {
         const key = n.title.slice(0, 40);
@@ -232,6 +283,7 @@ const NewsManager = (() => {
         return true;
       });
 
+      // Оставляем 50 самых свежих
       all = all.slice(0, 50);
 
       if (all.length) {
@@ -246,6 +298,8 @@ const NewsManager = (() => {
     } catch (e) {
       console.error('❌ Ошибка обновления новостей:', e);
       isRefreshing = false;
+      
+      // Если есть кэш — возвращаем его
       if (cachedNews.length) {
         cachedNews = cachedNews.map(n => ({
           ...n,
@@ -254,8 +308,9 @@ const NewsManager = (() => {
         saveToCache(cachedNews);
         return cachedNews;
       }
-      // Если нет кэша — используем фолбек
-      const fallback = getRussianFallbackNews();
+      
+      // Иначе используем фолбек
+      const fallback = getFallbackNews();
       cachedNews = fallback;
       saveToCache(fallback);
       return cachedNews;
