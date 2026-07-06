@@ -4,39 +4,32 @@ const NewsManager = (() => {
   let currentFilter = 'all';
   let isRefreshing = false;
 
-  // === ИСТОЧНИКИ НОВОСТЕЙ (только рабочие) ===
   const NEWS_SOURCES = [
-    // РБК - главные новости
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
       tag: 'ru',
       source: 'РБК',
     },
-    // Ведомости
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.vedomosti.ru%2Frss%2Fnews%2F',
       tag: 'ru',
       source: 'Ведомости',
     },
-    // Коммерсантъ
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
       tag: 'ru',
       source: 'Коммерсантъ',
     },
-    // Интерфакс
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.interfax.ru%2Frss.asp%3Fsec%3D1',
       tag: 'ru',
       source: 'Интерфакс',
     },
-    // Cointelegraph (крипто) через allorigins
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fcointelegraph.com%2Frss',
       tag: 'crypto',
       source: 'Cointelegraph',
     },
-    // MarketWatch (акции США) через allorigins
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F',
       tag: 'us',
@@ -44,31 +37,28 @@ const NewsManager = (() => {
     },
   ];
 
-  // === ФОЛБЕК-НОВОСТИ (реальные русские новости) ===
   function getFallbackNews() {
     const now = new Date();
     const ago = (m) => new Date(now - m * 60000);
     return [
-      { title: 'Биткоин держится выше $66 000 на фоне роста институционального спроса', tag: 'crypto', time: formatExactTime(ago(5)), link: '', source: 'Cointelegraph', pubDate: ago(5) },
-      { title: 'Сбербанк представил рекордную прибыль по итогам полугодия', tag: 'ru', time: formatExactTime(ago(12)), link: '', source: 'Ведомости', pubDate: ago(12) },
-      { title: 'Индекс МосБиржи обновил максимум с начала года', tag: 'ru', time: formatExactTime(ago(18)), link: '', source: 'Интерфакс', pubDate: ago(18) },
-      { title: 'Ethereum готовится к обновлению сети в третьем квартале', tag: 'crypto', time: formatExactTime(ago(25)), link: '', source: 'Decrypt', pubDate: ago(25) },
-      { title: 'ЦБ РФ сохранил ключевую ставку на уровне 16%', tag: 'ru', time: formatExactTime(ago(35)), link: '', source: 'РБК', pubDate: ago(35) },
-      { title: 'NVIDIA показала рекордную выручку благодаря спросу на AI-чипы', tag: 'us', time: formatExactTime(ago(42)), link: '', source: 'MarketWatch', pubDate: ago(42) },
-      { title: 'Газпром договорился о новых поставках газа в Китай', tag: 'ru', time: formatExactTime(ago(50)), link: '', source: 'Коммерсантъ', pubDate: ago(50) },
-      { title: 'Роснефть увеличила добычу нефти на 3,2% в первом полугодии', tag: 'ru', time: formatExactTime(ago(58)), link: '', source: 'РБК', pubDate: ago(58) },
-      { title: 'Solana DeFi достиг нового максимума по заблокированным средствам', tag: 'crypto', time: formatExactTime(ago(65)), link: '', source: 'CoinTelegraph', pubDate: ago(65) },
-      { title: 'ВТБ увеличил кредитный портфель на 15% за полгода', tag: 'ru', time: formatExactTime(ago(72)), link: '', source: 'Ведомости', pubDate: ago(72) },
+      { title: 'Биткоин держится выше $66 000 на фоне роста институционального спроса', tag: 'crypto', link: '', source: 'Cointelegraph', pubDate: ago(5) },
+      { title: 'Сбербанк представил рекордную прибыль по итогам полугодия', tag: 'ru', link: '', source: 'Ведомости', pubDate: ago(12) },
+      { title: 'Индекс МосБиржи обновил максимум с начала года', tag: 'ru', link: '', source: 'Интерфакс', pubDate: ago(18) },
+      { title: 'Ethereum готовится к обновлению сети в третьем квартале', tag: 'crypto', link: '', source: 'Decrypt', pubDate: ago(25) },
+      { title: 'ЦБ РФ сохранил ключевую ставку на уровне 16%', tag: 'ru', link: '', source: 'РБК', pubDate: ago(35) },
+      { title: 'NVIDIA показала рекордную выручку благодаря спросу на AI-чипы', tag: 'us', link: '', source: 'MarketWatch', pubDate: ago(42) },
+      { title: 'Газпром договорился о новых поставках газа в Китай', tag: 'ru', link: '', source: 'Коммерсантъ', pubDate: ago(50) },
+      { title: 'Роснефть увеличила добычу нефти на 3,2% в первом полугодии', tag: 'ru', link: '', source: 'РБК', pubDate: ago(58) },
+      { title: 'Solana DeFi достиг нового максимума по заблокированным средствам', tag: 'crypto', link: '', source: 'CoinTelegraph', pubDate: ago(65) },
+      { title: 'ВТБ увеличил кредитный портфель на 15% за полгода', tag: 'ru', link: '', source: 'Ведомости', pubDate: ago(72) },
     ];
   }
 
-  // === ПАРСИНГ RSS ИЗ XML ===
   function parseRSS(xmlText, defaultTag, sourceName) {
     try {
       const parser = new DOMParser();
       const xml = parser.parseFromString(xmlText, 'text/xml');
       
-      // Проверяем на ошибки парсинга
       if (xml.querySelector('parsererror')) {
         return [];
       }
@@ -82,19 +72,14 @@ const NewsManager = (() => {
         const pubDate = item.querySelector('pubDate')?.textContent || '';
         const description = item.querySelector('description')?.textContent || '';
         
-        // Пропускаем короткие заголовки
         if (title.length < 15) return;
         
-        // Определяем тег
         const tag = guessTag(title + ' ' + description, defaultTag);
-        
-        // Оставляем только нужные категории
         if (tag !== 'crypto' && tag !== 'us' && tag !== 'ru') return;
         
         results.push({
           title: cleanTitle(title),
-          link: link,
-          time: formatExactTime(pubDate),
+          link: link || '',
           tag: tag,
           source: sourceName || defaultTag,
           pubDate: new Date(pubDate || Date.now()),
@@ -115,24 +100,21 @@ const NewsManager = (() => {
       .replace(/&gt;/g,'>')
       .replace(/&#39;/g,"'")
       .replace(/&quot;/g,'"')
-      .replace(/\[.*?\]/g, '') // убираем [текст] в начале
+      .replace(/\[.*?\]/g, '')
       .trim();
   }
 
   function guessTag(title, def) {
     const t = (title || '').toUpperCase();
     
-    // КРИПТО
-    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|BITCOIN SPOT ETF|COINBASE|BINANCE|CRYPTO/i.test(t)) {
+    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|COINBASE|BINANCE/i.test(t)) {
       return 'crypto';
     }
     
-    // РОССИЯ
     if (/[А-Яа-я]/.test(t) && /РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ/i.test(t)) {
       return 'ru';
     }
     
-    // США
     if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|DOW|NASDAQ|FED|RATE|FOMC|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|FORD|GM|DISNEY|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|BROADCOM|CISCO/i.test(t)) {
       return 'us';
     }
@@ -140,13 +122,12 @@ const NewsManager = (() => {
     return def;
   }
 
-  // === ЛОКАЛЬНОЕ ВРЕМЯ УСТРОЙСТВА (без привязки к Москве) ===
-  function formatExactTime(dateStr) {
+  // === ФОРМАТИРОВАНИЕ ВРЕМЕНИ (один раз при сохранении) ===
+  function formatExactTime(date) {
     try {
-      const d = new Date(dateStr);
+      const d = new Date(date);
       const now = new Date();
       
-      // Используем локальное время устройства
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
@@ -179,7 +160,7 @@ const NewsManager = (() => {
           cachedNews = data.news.map(n => ({
             ...n,
             pubDate: new Date(n.pubDate),
-            time: formatExactTime(n.pubDate),
+            // Время уже сохранено в кэше, не пересчитываем!
           }));
           return true;
         }
@@ -192,12 +173,15 @@ const NewsManager = (() => {
 
   function saveToCache(news) {
     try {
+      // Сохраняем время ОДИН РАЗ при сохранении
+      const newsWithTime = news.map(n => ({
+        ...n,
+        pubDate: n.pubDate.toISOString ? n.pubDate.toISOString() : n.pubDate,
+        time: formatExactTime(n.pubDate), // <-- время сохраняется здесь
+      }));
+      
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        news: news.map(n => ({
-          ...n,
-          pubDate: n.pubDate.toISOString ? n.pubDate.toISOString() : n.pubDate,
-          time: formatExactTime(n.pubDate),
-        })),
+        news: newsWithTime,
         updatedAt: Date.now(),
       }));
     } catch (e) {
@@ -230,7 +214,6 @@ const NewsManager = (() => {
     try {
       console.log('🔄 Начинаем обновление новостей...');
       
-      // Загружаем все источники параллельно
       const promises = NEWS_SOURCES.map(async (source) => {
         try {
           const response = await fetch(source.url, {
@@ -264,16 +247,13 @@ const NewsManager = (() => {
 
       console.log(`📰 Всего загружено ${all.length} новостей`);
 
-      // Если ничего не загрузилось — используем фолбек
       if (!all.length) {
         console.log('⚠️ Используем фолбек-новости');
         all = getFallbackNews();
       }
 
-      // Сортировка по дате (свежие сверху)
       all.sort((a, b) => b.pubDate - a.pubDate);
       
-      // Дедупликация по заголовку
       const seen = new Set();
       all = all.filter(n => {
         const key = n.title.slice(0, 40);
@@ -282,7 +262,6 @@ const NewsManager = (() => {
         return true;
       });
 
-      // Оставляем 50 самых свежих
       all = all.slice(0, 50);
 
       if (all.length) {
@@ -298,17 +277,10 @@ const NewsManager = (() => {
       console.error('❌ Ошибка обновления новостей:', e);
       isRefreshing = false;
       
-      // Если есть кэш — возвращаем его
       if (cachedNews.length) {
-        cachedNews = cachedNews.map(n => ({
-          ...n,
-          time: formatExactTime(n.pubDate),
-        }));
-        saveToCache(cachedNews);
         return cachedNews;
       }
       
-      // Иначе используем фолбек
       const fallback = getFallbackNews();
       cachedNews = fallback;
       saveToCache(fallback);
@@ -328,6 +300,7 @@ const NewsManager = (() => {
     return cachedNews.filter(n => n.tag === filter);
   }
 
+  // === ОТОБРАЖЕНИЕ НОВОСТЕЙ С ССЫЛКАМИ ===
   function renderNewsItem(news) {
     const tagColors = {
       crypto: { bg: 'rgba(247,147,26,0.15)', color: '#F7931A', label: '🪙 Крипто' },
@@ -335,9 +308,13 @@ const NewsManager = (() => {
       ru:     { bg: 'rgba(220,38,38,0.15)', color: '#EF4444', label: '🇷🇺 Россия' },
     };
     const style = tagColors[news.tag] || tagColors.ru;
+    // Берём время из кэша (оно уже сохранено)
     const timeDisplay = news.time || formatExactTime(news.pubDate);
+    // Ссылка для открытия
+    const link = news.link || '#';
+    
     return `
-      <div class="news-item" onclick="window.open('${news.link || '#'}', '_blank')">
+      <div class="news-item" onclick="window.open('${link}', '_blank')" style="cursor:pointer;">
         <div class="news-time" style="min-width:50px;font-size:11px;">${timeDisplay}</div>
         <div class="news-body">
           <div class="news-title">${news.title}</div>
