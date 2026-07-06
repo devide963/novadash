@@ -37,22 +37,7 @@ const NewsManager = (() => {
     },
   ];
 
-  function getFallbackNews() {
-    const now = new Date();
-    const ago = (m) => new Date(now - m * 60000);
-    return [
-      { title: 'Биткоин держится выше $66 000 на фоне роста институционального спроса', tag: 'crypto', link: '', source: 'Cointelegraph', pubDate: ago(5) },
-      { title: 'Сбербанк представил рекордную прибыль по итогам полугодия', tag: 'ru', link: '', source: 'Ведомости', pubDate: ago(12) },
-      { title: 'Индекс МосБиржи обновил максимум с начала года', tag: 'ru', link: '', source: 'Интерфакс', pubDate: ago(18) },
-      { title: 'Ethereum готовится к обновлению сети в третьем квартале', tag: 'crypto', link: '', source: 'Decrypt', pubDate: ago(25) },
-      { title: 'ЦБ РФ сохранил ключевую ставку на уровне 16%', tag: 'ru', link: '', source: 'РБК', pubDate: ago(35) },
-      { title: 'NVIDIA показала рекордную выручку благодаря спросу на AI-чипы', tag: 'us', link: '', source: 'MarketWatch', pubDate: ago(42) },
-      { title: 'Газпром договорился о новых поставках газа в Китай', tag: 'ru', link: '', source: 'Коммерсантъ', pubDate: ago(50) },
-      { title: 'Роснефть увеличила добычу нефти на 3,2% в первом полугодии', tag: 'ru', link: '', source: 'РБК', pubDate: ago(58) },
-      { title: 'Solana DeFi достиг нового максимума по заблокированным средствам', tag: 'crypto', link: '', source: 'CoinTelegraph', pubDate: ago(65) },
-      { title: 'ВТБ увеличил кредитный портфель на 15% за полгода', tag: 'ru', link: '', source: 'Ведомости', pubDate: ago(72) },
-    ];
-  }
+  // === БЕЗ ФОЛБЕКА! ТОЛЬКО РЕАЛЬНЫЕ НОВОСТИ ===
 
   function parseRSS(xmlText, defaultTag, sourceName) {
     try {
@@ -75,7 +60,11 @@ const NewsManager = (() => {
         if (title.length < 15) return;
         
         const tag = guessTag(title + ' ' + description, defaultTag);
-        if (tag !== 'crypto' && tag !== 'us' && tag !== 'ru') return;
+        
+        // ТОЛЬКО КРИПТА И АКЦИИ (США + РОССИЯ)
+        if (tag !== 'crypto' && tag !== 'us' && tag !== 'ru') {
+          return;
+        }
         
         results.push({
           title: cleanTitle(title),
@@ -107,22 +96,26 @@ const NewsManager = (() => {
   function guessTag(title, def) {
     const t = (title || '').toUpperCase();
     
-    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|COINBASE|BINANCE/i.test(t)) {
+    // === КРИПТО ===
+    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|DOT|LINK|CHAINLINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|COINBASE|BINANCE|CRYPTO/i.test(t)) {
       return 'crypto';
     }
     
-    if (/[А-Яа-я]/.test(t) && /РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ/i.test(t)) {
-      return 'ru';
+    // === РОССИЯ ===
+    if (/[А-Яа-я]/.test(t)) {
+      if (/РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|СБЕРБАНК|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ|АКЦИЯ|РЫНОК/i.test(t)) {
+        return 'ru';
+      }
     }
     
-    if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|DOW|NASDAQ|FED|RATE|FOMC|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|FORD|GM|DISNEY|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|BROADCOM|CISCO/i.test(t)) {
+    // === США ===
+    if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|SPY|DOW|NASDAQ|FED|FOMC|RATE|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|FORD|GM|DISNEY|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|BROADCOM|CISCO|STOCK|SHARES|EARNINGS|DIVIDEND/i.test(t)) {
       return 'us';
     }
     
-    return def;
+    return 'other';
   }
 
-  // === ФОРМАТИРОВАНИЕ ВРЕМЕНИ (один раз при сохранении) ===
   function formatExactTime(date) {
     try {
       const d = new Date(date);
@@ -160,7 +153,6 @@ const NewsManager = (() => {
           cachedNews = data.news.map(n => ({
             ...n,
             pubDate: new Date(n.pubDate),
-            // Время уже сохранено в кэше, не пересчитываем!
           }));
           return true;
         }
@@ -173,11 +165,10 @@ const NewsManager = (() => {
 
   function saveToCache(news) {
     try {
-      // Сохраняем время ОДИН РАЗ при сохранении
       const newsWithTime = news.map(n => ({
         ...n,
         pubDate: n.pubDate.toISOString ? n.pubDate.toISOString() : n.pubDate,
-        time: formatExactTime(n.pubDate), // <-- время сохраняется здесь
+        time: formatExactTime(n.pubDate),
       }));
       
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -247,9 +238,15 @@ const NewsManager = (() => {
 
       console.log(`📰 Всего загружено ${all.length} новостей`);
 
+      // === НЕТ ФОЛБЕКА! ЕСЛИ НЕТ НОВОСТЕЙ — ВОЗВРАЩАЕМ ПУСТОЙ МАССИВ ===
       if (!all.length) {
-        console.log('⚠️ Используем фолбек-новости');
-        all = getFallbackNews();
+        console.log('⚠️ Новости не загрузились');
+        isRefreshing = false;
+        // Если есть кэш — возвращаем его
+        if (cachedNews.length) {
+          return cachedNews;
+        }
+        return [];
       }
 
       all.sort((a, b) => b.pubDate - a.pubDate);
@@ -281,10 +278,7 @@ const NewsManager = (() => {
         return cachedNews;
       }
       
-      const fallback = getFallbackNews();
-      cachedNews = fallback;
-      saveToCache(fallback);
-      return cachedNews;
+      return [];
     }
   }
 
@@ -300,7 +294,6 @@ const NewsManager = (() => {
     return cachedNews.filter(n => n.tag === filter);
   }
 
-  // === ОТОБРАЖЕНИЕ НОВОСТЕЙ С ССЫЛКАМИ ===
   function renderNewsItem(news) {
     const tagColors = {
       crypto: { bg: 'rgba(247,147,26,0.15)', color: '#F7931A', label: '🪙 Крипто' },
@@ -308,9 +301,7 @@ const NewsManager = (() => {
       ru:     { bg: 'rgba(220,38,38,0.15)', color: '#EF4444', label: '🇷🇺 Россия' },
     };
     const style = tagColors[news.tag] || tagColors.ru;
-    // Берём время из кэша (оно уже сохранено)
     const timeDisplay = news.time || formatExactTime(news.pubDate);
-    // Ссылка для открытия
     const link = news.link || '#';
     
     return `
