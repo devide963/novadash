@@ -3,41 +3,47 @@ const NewsManager = (() => {
   let cachedNews = [];
   let currentFilter = 'all';
   let isRefreshing = false;
+  let retryCount = 0;
 
+  // === ИСТОЧНИКИ С ЗАПАСНЫМИ ПРОКСИ ===
   const NEWS_SOURCES = [
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
+      backup: 'https://corsproxy.io/?https://www.rbc.ru/rss/',
       tag: 'ru',
       source: 'РБК',
     },
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.vedomosti.ru%2Frss%2Fnews%2F',
+      backup: 'https://corsproxy.io/?https://www.vedomosti.ru/rss/news/',
       tag: 'ru',
       source: 'Ведомости',
     },
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
+      backup: 'https://corsproxy.io/?https://www.kommersant.ru/RSS/news.xml',
       tag: 'ru',
       source: 'Коммерсантъ',
     },
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.interfax.ru%2Frss.asp%3Fsec%3D1',
+      backup: 'https://corsproxy.io/?https://www.interfax.ru/rss.asp?sec=1',
       tag: 'ru',
       source: 'Интерфакс',
     },
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fcointelegraph.com%2Frss',
+      backup: 'https://corsproxy.io/?https://cointelegraph.com/rss',
       tag: 'crypto',
       source: 'Cointelegraph',
     },
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F',
+      backup: 'https://corsproxy.io/?https://feeds.marketwatch.com/marketwatch/topstories/',
       tag: 'us',
       source: 'MarketWatch',
     },
   ];
-
-  // === БЕЗ ФОЛБЕКА! ТОЛЬКО РЕАЛЬНЫЕ НОВОСТИ ===
 
   function parseRSS(xmlText, defaultTag, sourceName) {
     try {
@@ -61,7 +67,6 @@ const NewsManager = (() => {
         
         const tag = guessTag(title + ' ' + description, defaultTag);
         
-        // ТОЛЬКО КРИПТА И АКЦИИ (США + РОССИЯ)
         if (tag !== 'crypto' && tag !== 'us' && tag !== 'ru') {
           return;
         }
@@ -82,6 +87,52 @@ const NewsManager = (() => {
     }
   }
 
+  // === ЗАГРУЗКА С ПОВТОРНЫМИ ПОПЫТКАМИ ===
+  async function fetchWithRetry(url, backupUrl, sourceName, attempt = 0) {
+    const timeout = 15000; // 15 секунд
+    
+    try {
+      // Пробуем основной URL
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(timeout),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const text = await response.text();
+      return text;
+      
+    } catch (e) {
+      console.warn(`⚠️ ${sourceName}: основной URL не работает (${e.message})`);
+      
+      // Если есть запасной URL и это первая попытка
+      if (backupUrl && attempt === 0) {
+        console.log(`🔄 ${sourceName}: пробуем запасной URL...`);
+        try {
+          const response = await fetch(backupUrl, {
+            signal: AbortSignal.timeout(timeout),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          
+          const text = await response.text();
+          console.log(`✅ ${sourceName}: запасной URL сработал`);
+          return text;
+          
+        } catch (e2) {
+          console.warn(`❌ ${sourceName}: запасной URL тоже не работает (${e2.message})`);
+          throw e2;
+        }
+      }
+      
+      throw e;
+    }
+  }
+
   function cleanTitle(t) {
     return t
       .replace(/&amp;/g,'&')
@@ -96,19 +147,16 @@ const NewsManager = (() => {
   function guessTag(title, def) {
     const t = (title || '').toUpperCase();
     
-    // === КРИПТО ===
     if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|DOT|LINK|CHAINLINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|COINBASE|BINANCE|CRYPTO/i.test(t)) {
       return 'crypto';
     }
     
-    // === РОССИЯ ===
     if (/[А-Яа-я]/.test(t)) {
       if (/РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|СБЕРБАНК|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ|АКЦИЯ|РЫНОК/i.test(t)) {
         return 'ru';
       }
     }
     
-    // === США ===
     if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|SPY|DOW|NASDAQ|FED|FOMC|RATE|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|FORD|GM|DISNEY|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|BROADCOM|CISCO|STOCK|SHARES|EARNINGS|DIVIDEND/i.test(t)) {
       return 'us';
     }
@@ -207,18 +255,11 @@ const NewsManager = (() => {
       
       const promises = NEWS_SOURCES.map(async (source) => {
         try {
-          const response = await fetch(source.url, {
-            signal: AbortSignal.timeout(8000),
-          });
-          
-          if (!response.ok) {
-            console.warn(`❌ ${source.source}: HTTP ${response.status}`);
-            return [];
-          }
-          
-          const text = await response.text();
+          const text = await fetchWithRetry(source.url, source.backup, source.source);
           const parsed = parseRSS(text, source.tag, source.source);
-          console.log(`✅ ${source.source}: ${parsed.length} новостей`);
+          if (parsed.length > 0) {
+            console.log(`✅ ${source.source}: ${parsed.length} новостей`);
+          }
           return parsed;
           
         } catch (e) {
@@ -238,11 +279,9 @@ const NewsManager = (() => {
 
       console.log(`📰 Всего загружено ${all.length} новостей`);
 
-      // === НЕТ ФОЛБЕКА! ЕСЛИ НЕТ НОВОСТЕЙ — ВОЗВРАЩАЕМ ПУСТОЙ МАССИВ ===
       if (!all.length) {
         console.log('⚠️ Новости не загрузились');
         isRefreshing = false;
-        // Если есть кэш — возвращаем его
         if (cachedNews.length) {
           return cachedNews;
         }
