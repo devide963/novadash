@@ -1,13 +1,10 @@
 const NewsManager = (() => {
-  // Кэш в localStorage
   const STORAGE_KEY = 'nova_news_cache';
   let cachedNews = [];
   let currentFilter = 'all';
   let isRefreshing = false;
 
-  // RSS-to-JSON proxies
   const FEEDS = [
-    // Крипто-новости
     {
       url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fcointelegraph.com%2Frss&count=12',
       tag: 'crypto',
@@ -23,7 +20,6 @@ const NewsManager = (() => {
       tag: 'crypto',
       parse: parseRss2json,
     },
-    // Американские акции
     {
       url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F&count=10',
       tag: 'us',
@@ -39,7 +35,6 @@ const NewsManager = (() => {
       tag: 'us',
       parse: parseRss2json,
     },
-    // Российские новости
     {
       url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
       tag: 'ru',
@@ -67,7 +62,7 @@ const NewsManager = (() => {
     return data.items.map(item => ({
       title: cleanTitle(item.title || ''),
       link:  item.link  || '',
-      time:  formatNewsTime(item.pubDate),
+      time:  formatExactTime(item.pubDate),
       tag:   guessTag(item.title, defaultTag),
       source: data.feed?.title || defaultTag,
       pubDate: new Date(item.pubDate || Date.now()),
@@ -95,20 +90,30 @@ const NewsManager = (() => {
     return def;
   }
 
-  function formatNewsTime(dateStr) {
+  function formatExactTime(dateStr) {
     try {
       const d = new Date(dateStr);
       const now = new Date();
-      const diff = (now - d) / 1000;
-      if (diff < 60) return 'только что';
-      if (diff < 3600) return `${Math.floor(diff / 60)}м назад`;
-      if (diff < 86400) return `${Math.floor(diff / 3600)}ч назад`;
-      if (diff < 172800) return 'вчера';
-      return d.toLocaleDateString('ru-RU', { day:'numeric', month:'short' });
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const timeStr = `${hours}:${minutes}`;
+      
+      if (d >= today) {
+        return `Сегодня ${timeStr}`;
+      } else if (d >= yesterday) {
+        return `Вчера ${timeStr}`;
+      } else {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        return `${day}.${month} ${timeStr}`;
+      }
     } catch { return 'недавно'; }
   }
 
-  // === КЭШ В localStorage ===
   function loadFromCache() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -118,10 +123,7 @@ const NewsManager = (() => {
           cachedNews = data.news.map(n => ({
             ...n,
             pubDate: new Date(n.pubDate),
-          }));
-          cachedNews = cachedNews.map(n => ({
-            ...n,
-            time: formatNewsTime(n.pubDate),
+            time: formatExactTime(n.pubDate),
           }));
           return true;
         }
@@ -138,6 +140,7 @@ const NewsManager = (() => {
         news: news.map(n => ({
           ...n,
           pubDate: n.pubDate.toISOString ? n.pubDate.toISOString() : n.pubDate,
+          time: formatExactTime(n.pubDate),
         })),
         updatedAt: Date.now(),
       }));
@@ -146,26 +149,21 @@ const NewsManager = (() => {
     }
   }
 
-  // === Основные функции ===
   async function fetchAll(force = false) {
-    // Если есть кэш в памяти — сразу возвращаем
     if (!force && cachedNews.length) {
       return cachedNews;
     }
 
-    // Если нет в памяти — пробуем загрузить из localStorage
     if (!cachedNews.length) {
       const loaded = loadFromCache();
       if (loaded) return cachedNews;
     }
 
-    // Если есть кэш, но нужно обновить в фоне — возвращаем кэш
     if (cachedNews.length && !force) {
       refreshInBackground();
       return cachedNews;
     }
 
-    // Принудительная загрузка (нет кэша или force=true)
     return await refreshNews();
   }
 
@@ -190,21 +188,14 @@ const NewsManager = (() => {
         }
       });
 
-      // Если ничего не загрузилось — возвращаем то, что есть в кэше (или пустой массив)
       if (!all.length) {
         isRefreshing = false;
-        if (cachedNews.length) {
-          return cachedNews;
-        }
-        // Пробуем загрузить из localStorage
+        if (cachedNews.length) return cachedNews;
         const loaded = loadFromCache();
-        if (loaded) {
-          return cachedNews;
-        }
+        if (loaded) return cachedNews;
         return [];
       }
 
-      // Сортировка и дедупликация
       all.sort((a, b) => b.pubDate - a.pubDate);
       const seen = new Set();
       all = all.filter(n => {
@@ -227,7 +218,6 @@ const NewsManager = (() => {
     } catch (e) {
       console.warn('Ошибка обновления новостей:', e);
       isRefreshing = false;
-      // Возвращаем кэш, если есть
       if (cachedNews.length) return cachedNews;
       loadFromCache();
       return cachedNews;
@@ -238,9 +228,7 @@ const NewsManager = (() => {
     if (isRefreshing) return;
     try {
       await refreshNews();
-    } catch (e) {
-      // Игнорируем ошибки в фоне
-    }
+    } catch (e) {}
   }
 
   function getFilteredNews(filter = 'all') {
@@ -256,9 +244,10 @@ const NewsManager = (() => {
       stocks: { bg: 'rgba(59,158,255,0.15)', color: '#3B9EFF', label: '📊 Акции' },
     };
     const style = tagColors[news.tag] || tagColors.stocks;
+    const timeDisplay = news.time || formatExactTime(news.pubDate);
     return `
       <div class="news-item" onclick="window.open('${news.link || '#'}', '_blank')">
-        <div class="news-time">${news.time}</div>
+        <div class="news-time" style="min-width:50px;font-size:11px;">${timeDisplay}</div>
         <div class="news-body">
           <div class="news-title">${news.title}</div>
           <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
@@ -278,22 +267,7 @@ const NewsManager = (() => {
     return filtered.map(renderNewsItem).join('');
   }
 
-  // Обновление времени каждую минуту
-  function refreshTimestamps() {
-    setInterval(() => {
-      if (cachedNews.length) {
-        cachedNews = cachedNews.map(n => ({
-          ...n,
-          time: formatNewsTime(n.pubDate),
-        }));
-        saveToCache(cachedNews);
-      }
-    }, 60000);
-  }
-
-  // Периодическое обновление в фоне (каждые 3 минуты)
   function startPolling() {
-    refreshTimestamps();
     setInterval(() => {
       refreshInBackground();
     }, 3 * 60 * 1000);
@@ -303,11 +277,9 @@ const NewsManager = (() => {
     return cachedNews.slice(0, n);
   }
 
-  // === ИНИЦИАЛИЗАЦИЯ ===
   function init() {
     loadFromCache();
     startPolling();
-    // Первое обновление через 2 секунды (если есть интернет)
     setTimeout(() => {
       refreshInBackground();
     }, 2000);

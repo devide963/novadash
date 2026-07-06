@@ -126,7 +126,6 @@ const OverviewPage = (() => {
     
     // Если кэш пуст, пробуем загрузить из localStorage
     if (!news || !news.length) {
-      // Пробуем синхронно загрузить из кэша
       try {
         const raw = localStorage.getItem('nova_news_cache');
         if (raw) {
@@ -135,7 +134,7 @@ const OverviewPage = (() => {
             news = data.news.slice(0, 3).map(n => ({
               ...n,
               pubDate: new Date(n.pubDate),
-              time: formatRelativeTime(new Date(n.pubDate)),
+              time: formatExactTime(new Date(n.pubDate)),
             }));
           }
         }
@@ -171,9 +170,12 @@ const OverviewPage = (() => {
         stocks: '#3B9EFF',
       }[n.tag] || '#3B9EFF';
 
+      // Показываем точное время публикации
+      const timeDisplay = n.time || formatExactTime(n.pubDate);
+
       return `
         <div class="news-item" onclick="window.open('${n.link || '#'}', '_blank')" style="${i > 0 ? 'border-top:1px solid var(--glass-border);' : ''}">
-          <div class="news-time">${n.time || 'недавно'}</div>
+          <div class="news-time" style="min-width:50px;font-size:11px;">${timeDisplay}</div>
           <div class="news-body">
             <div class="news-title" style="font-size:13px;line-height:1.4;">${n.title}</div>
             <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
@@ -186,16 +188,27 @@ const OverviewPage = (() => {
     }).join('');
   }
 
-  // Вспомогательная функция для форматирования времени
-  function formatRelativeTime(date) {
+  // Функция для отображения точного времени публикации
+  function formatExactTime(date) {
     try {
       const now = new Date();
-      const diff = (now - date) / 1000;
-      if (diff < 60) return 'только что';
-      if (diff < 3600) return `${Math.floor(diff / 60)}м назад`;
-      if (diff < 86400) return `${Math.floor(diff / 3600)}ч назад`;
-      if (diff < 172800) return 'вчера';
-      return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const timeStr = `${hours}:${minutes}`;
+      
+      if (date >= today) {
+        return `Сегодня ${timeStr}`;
+      } else if (date >= yesterday) {
+        return `Вчера ${timeStr}`;
+      } else {
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        return `${day}.${month} ${timeStr}`;
+      }
     } catch {
       return 'недавно';
     }
@@ -217,7 +230,7 @@ const OverviewPage = (() => {
       panel.innerHTML = `
         <div class="notif-panel-header">
           <span class="notif-panel-title">📰 Все новости</span>
-          <button class="close-btn" id="close-news">
+          <button class="close-btn" id="close-news-panel">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -250,7 +263,7 @@ const OverviewPage = (() => {
       });
 
       // Закрытие панели (возврат на главную)
-      panel.querySelector('#close-news').addEventListener('click', () => {
+      panel.querySelector('#close-news-panel').addEventListener('click', () => {
         panel.classList.remove('open');
       });
     }
