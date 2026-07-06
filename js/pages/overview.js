@@ -113,11 +113,11 @@ const OverviewPage = (() => {
     // Кнопка "Все новости"
     Utils.el('news-show-all-btn')?.addEventListener('click', showNewsPanel);
 
-    // Обновляем отображение новостей каждые 3 минуты
+    // Обновляем отображение новостей каждые 30 секунд (быстрое обновление)
     if (newsInterval) clearInterval(newsInterval);
     newsInterval = setInterval(() => {
       updateNewsPreview();
-    }, 3 * 60 * 1000);
+    }, 30 * 1000);
   }
 
   function renderNewsPreview() {
@@ -170,7 +170,7 @@ const OverviewPage = (() => {
         stocks: '#3B9EFF',
       }[n.tag] || '#3B9EFF';
 
-      // Показываем точное время публикации
+      // Показываем точное время публикации (Московское)
       const timeDisplay = n.time || formatExactTime(n.pubDate);
 
       return `
@@ -188,25 +188,29 @@ const OverviewPage = (() => {
     }).join('');
   }
 
-  // Функция для отображения точного времени публикации
+  // Функция для отображения точного времени публикации (Московское UTC+3)
   function formatExactTime(date) {
     try {
+      // Принудительно переводим в московское время (UTC+3)
+      const mskTime = new Date(date.getTime() + 3 * 60 * 60 * 1000);
       const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const nowMsk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+      
+      const today = new Date(nowMsk.getFullYear(), nowMsk.getMonth(), nowMsk.getDate());
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
       
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const hours = String(mskTime.getHours()).padStart(2, '0');
+      const minutes = String(mskTime.getMinutes()).padStart(2, '0');
       const timeStr = `${hours}:${minutes}`;
       
-      if (date >= today) {
+      if (mskTime >= today) {
         return `Сегодня ${timeStr}`;
-      } else if (date >= yesterday) {
+      } else if (mskTime >= yesterday) {
         return `Вчера ${timeStr}`;
       } else {
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(mskTime.getDate()).padStart(2, '0');
+        const month = String(mskTime.getMonth() + 1).padStart(2, '0');
         return `${day}.${month} ${timeStr}`;
       }
     } catch {
@@ -230,7 +234,7 @@ const OverviewPage = (() => {
       panel.innerHTML = `
         <div class="notif-panel-header">
           <span class="notif-panel-title">📰 Все новости</span>
-          <button class="close-btn" id="close-news-panel">
+          <button class="close-btn" id="close-news-panel-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -262,8 +266,8 @@ const OverviewPage = (() => {
         });
       });
 
-      // Закрытие панели (возврат на главную)
-      panel.querySelector('#close-news-panel').addEventListener('click', () => {
+      // Закрытие панели - ИСПРАВЛЕНО!
+      panel.querySelector('#close-news-panel-btn').addEventListener('click', () => {
         panel.classList.remove('open');
       });
     }
