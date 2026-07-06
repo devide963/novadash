@@ -121,10 +121,34 @@ const OverviewPage = (() => {
   }
 
   function renderNewsPreview() {
-    const news = NewsManager.getLatest(4);
+    // Пытаемся сначала получить новости из кэша
+    let news = NewsManager.getLatest(3);
+    
+    // Если кэш пуст, пробуем загрузить из localStorage
     if (!news || !news.length) {
-      return '<div style="text-align:center;color:var(--text-muted);padding:12px 0;font-size:13px;">Загрузка новостей...</div>';
+      // Пробуем синхронно загрузить из кэша
+      try {
+        const raw = localStorage.getItem('nova_news_cache');
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (data && Array.isArray(data.news) && data.news.length) {
+            news = data.news.slice(0, 3).map(n => ({
+              ...n,
+              pubDate: new Date(n.pubDate),
+              time: formatRelativeTime(new Date(n.pubDate)),
+            }));
+          }
+        }
+      } catch (e) {
+        // Игнорируем ошибки
+      }
     }
+
+    // Если всё равно нет новостей — показываем заглушку
+    if (!news || !news.length) {
+      return '<div style="text-align:center;color:var(--text-muted);padding:12px 0;font-size:13px;">Новости загружаются...</div>';
+    }
+
     return news.map((n, i) => {
       const tagLabels = {
         crypto: '🪙 Крипто',
@@ -149,7 +173,7 @@ const OverviewPage = (() => {
 
       return `
         <div class="news-item" onclick="window.open('${n.link || '#'}', '_blank')" style="${i > 0 ? 'border-top:1px solid var(--glass-border);' : ''}">
-          <div class="news-time">${n.time}</div>
+          <div class="news-time">${n.time || 'недавно'}</div>
           <div class="news-body">
             <div class="news-title" style="font-size:13px;line-height:1.4;">${n.title}</div>
             <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
@@ -160,6 +184,21 @@ const OverviewPage = (() => {
         </div>
       `;
     }).join('');
+  }
+
+  // Вспомогательная функция для форматирования времени
+  function formatRelativeTime(date) {
+    try {
+      const now = new Date();
+      const diff = (now - date) / 1000;
+      if (diff < 60) return 'только что';
+      if (diff < 3600) return `${Math.floor(diff / 60)}м назад`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}ч назад`;
+      if (diff < 172800) return 'вчера';
+      return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    } catch {
+      return 'недавно';
+    }
   }
 
   function updateNewsPreview() {
@@ -210,7 +249,7 @@ const OverviewPage = (() => {
         });
       });
 
-      // Закрытие
+      // Закрытие панели (возврат на главную)
       panel.querySelector('#close-news').addEventListener('click', () => {
         panel.classList.remove('open');
       });
