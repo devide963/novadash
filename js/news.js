@@ -4,37 +4,36 @@ const NewsManager = (() => {
   let currentFilter = 'all';
   let isRefreshing = false;
 
+  // === МНОГО ИСТОЧНИКОВ (с запасными) ===
   const FEEDS = [
+    // Крипто
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fcointelegraph.com%2Frss&count=12',
+      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fcointelegraph.com%2Frss&count=15',
       tag: 'crypto',
       parse: parseRss2json,
     },
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fdecrypt.co%2Ffeed&count=8',
+      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fdecrypt.co%2Ffeed&count=10',
       tag: 'crypto',
       parse: parseRss2json,
     },
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.coindesk.com%2Farc%2Foutboundfeeds%2Frss%2F&count=8',
+      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.coindesk.com%2Farc%2Foutboundfeeds%2Frss%2F&count=10',
       tag: 'crypto',
       parse: parseRss2json,
     },
+    // США
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F&count=10',
+      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F&count=12',
       tag: 'us',
       parse: parseRss2json,
     },
     {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.cnbc.com%2Fid%2F100003114%2Fdevice%2Frss%2Frss.html&count=8',
+      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.cnbc.com%2Fid%2F100003114%2Fdevice%2Frss%2Frss.html&count=10',
       tag: 'us',
       parse: parseRss2json,
     },
-    {
-      url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffinance.yahoo.com%2Fnews%2Frss%2F&count=8',
-      tag: 'us',
-      parse: parseRss2json,
-    },
+    // РОССИЯ (основные)
     {
       url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
       tag: 'ru',
@@ -55,6 +54,17 @@ const NewsManager = (() => {
       tag: 'ru',
       parse: parseRss2json,
     },
+    // === ЗАПАСНЫЕ ИСТОЧНИКИ (если rss2json не работает) ===
+    {
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
+      tag: 'ru',
+      parse: parseRSSFromText,
+    },
+    {
+      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
+      tag: 'ru',
+      parse: parseRSSFromText,
+    },
   ];
 
   function parseRss2json(data, defaultTag) {
@@ -67,6 +77,34 @@ const NewsManager = (() => {
       source: data.feed?.title || defaultTag,
       pubDate: new Date(item.pubDate || Date.now()),
     })).filter(n => n.title.length > 15);
+  }
+
+  // Парсинг RSS из обычного текста (запасной вариант)
+  function parseRSSFromText(text, defaultTag) {
+    try {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(text, 'text/xml');
+      const items = xml.querySelectorAll('item');
+      const results = [];
+      
+      items.forEach(item => {
+        const title = item.querySelector('title')?.textContent || '';
+        const link = item.querySelector('link')?.textContent || '';
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+        results.push({
+          title: cleanTitle(title),
+          link: link,
+          time: formatExactTime(pubDate),
+          tag: guessTag(title, defaultTag),
+          source: defaultTag,
+          pubDate: new Date(pubDate || Date.now()),
+        });
+      });
+      
+      return results.filter(n => n.title.length > 15);
+    } catch (e) {
+      return [];
+    }
   }
 
   function cleanTitle(t) {
@@ -156,47 +194,108 @@ const NewsManager = (() => {
   }
 
   async function fetchAll(force = false) {
-    if (!force && cachedNews.length) return cachedNews;
-    if (!cachedNews.length) {
-      const loaded = loadFromCache();
-      if (loaded) return cachedNews;
-    }
-    if (cachedNews.length && !force) {
+    if (!force && cachedNews.length) {
+      // В фоне обновляем, но не ждём
       refreshInBackground();
       return cachedNews;
     }
+    
+    if (!cachedNews.length) {
+      const loaded = loadFromCache();
+      if (loaded) {
+        refreshInBackground();
+        return cachedNews;
+      }
+    }
+
+    // Принудительная загрузка
     return await refreshNews();
   }
 
   async function refreshNews() {
-    if (isRefreshing) return cachedNews;
+    if (isRefreshing) {
+      // Ждём пока завершится текущее обновление
+      return cachedNews;
+    }
     isRefreshing = true;
 
     try {
-      const results = await Promise.allSettled(
-        FEEDS.map(f =>
-          fetch(f.url, { signal: AbortSignal.timeout(6000) })
-            .then(r => r.json())
-            .then(data => f.parse(data, f.tag))
-            .catch(() => [])
-        )
+      console.log('🔄 Начинаем обновление новостей...');
+      
+      // Пробуем все источники с таймаутом
+      const fetchPromises = FEEDS.map(f =>
+        fetch(f.url, { 
+          signal: AbortSignal.timeout(5000),
+          headers: {
+            'Accept': 'application/json',
+          }
+        })
+          .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          })
+          .then(data => {
+            // Если это allorigins, то data - это текст RSS
+            if (typeof data === 'string') {
+              return f.parse(data, f.tag);
+            }
+            return f.parse(data, f.tag);
+          })
+          .catch(() => [])
       );
 
+      const results = await Promise.allSettled(fetchPromises);
+      
       let all = [];
       results.forEach(r => {
-        if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+        if (r.status === 'fulfilled' && Array.isArray(r.value) && r.value.length) {
           all = all.concat(r.value);
         }
       });
 
+      console.log(`📰 Загружено ${all.length} новостей`);
+
+      // Если ничего не загрузилось, пробуем запасной вариант через allorigins
       if (!all.length) {
+        console.log('⚠️ Основные источники не дали новостей, пробуем запасные...');
+        try {
+          const backupResults = await Promise.allSettled([
+            fetch('https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F', { signal: AbortSignal.timeout(5000) })
+              .then(r => r.text())
+              .then(text => parseRSSFromText(text, 'ru'))
+              .catch(() => []),
+            fetch('https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml', { signal: AbortSignal.timeout(5000) })
+              .then(r => r.text())
+              .then(text => parseRSSFromText(text, 'ru'))
+              .catch(() => [])
+          ]);
+          
+          backupResults.forEach(r => {
+            if (r.status === 'fulfilled' && Array.isArray(r.value) && r.value.length) {
+              all = all.concat(r.value);
+            }
+          });
+        } catch (e) {
+          console.warn('Запасные источники не сработали:', e);
+        }
+      }
+
+      if (!all.length) {
+        console.warn('❌ Новости не загрузились, используем кэш');
         isRefreshing = false;
-        if (cachedNews.length) return cachedNews;
-        const loaded = loadFromCache();
-        if (loaded) return cachedNews;
+        if (cachedNews.length) {
+          // Обновляем время в кэше
+          cachedNews = cachedNews.map(n => ({
+            ...n,
+            time: formatExactTime(n.pubDate),
+          }));
+          saveToCache(cachedNews);
+          return cachedNews;
+        }
         return [];
       }
 
+      // Сортировка и дедупликация
       all.sort((a, b) => b.pubDate - a.pubDate);
       const seen = new Set();
       all = all.filter(n => {
@@ -211,15 +310,24 @@ const NewsManager = (() => {
       if (all.length) {
         cachedNews = all;
         saveToCache(all);
+        console.log(`✅ Сохранено ${all.length} новостей в кэш`);
       }
 
       isRefreshing = false;
       return cachedNews;
 
     } catch (e) {
-      console.warn('Ошибка обновления новостей:', e);
+      console.error('❌ Ошибка обновления новостей:', e);
       isRefreshing = false;
-      if (cachedNews.length) return cachedNews;
+      if (cachedNews.length) {
+        // Обновляем время в кэше
+        cachedNews = cachedNews.map(n => ({
+          ...n,
+          time: formatExactTime(n.pubDate),
+        }));
+        saveToCache(cachedNews);
+        return cachedNews;
+      }
       loadFromCache();
       return cachedNews;
     }
@@ -229,7 +337,9 @@ const NewsManager = (() => {
     if (isRefreshing) return;
     try {
       await refreshNews();
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Фоновая загрузка новостей:', e);
+    }
   }
 
   function getFilteredNews(filter = 'all') {
@@ -269,6 +379,7 @@ const NewsManager = (() => {
   }
 
   function startPolling() {
+    // Обновляем каждые 30 секунд
     setInterval(() => {
       refreshInBackground();
     }, 30 * 1000);
@@ -281,6 +392,7 @@ const NewsManager = (() => {
   function init() {
     loadFromCache();
     startPolling();
+    // Первое обновление через 1 секунду
     setTimeout(() => {
       refreshInBackground();
     }, 1000);
