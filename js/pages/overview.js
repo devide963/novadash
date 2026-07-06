@@ -7,6 +7,8 @@ const OverviewPage = (() => {
   // Finnhub API key
   const FINNHUB_KEY = 'd934s4pr01qpou39j2ggd934s4pr01qpou39j2h0';
 
+  let newsInterval = null;
+
   function getIconHtml(symbol) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     const cryptoUrl = `${base}/crypto/XTVC${symbol}.svg`;
@@ -43,6 +45,17 @@ const OverviewPage = (() => {
 
       <div class="glass-card mb-12" style="padding:16px">
         <div id="overview-tv-chart" style="height:280px;width:100%"></div>
+      </div>
+
+      <!-- БЛОК НОВОСТЕЙ -->
+      <div class="glass-card mb-12" style="padding:12px 16px;">
+        <div class="section-header">
+          <span class="section-title">📰 Новости рынка</span>
+          <button class="section-link" id="news-show-all-btn">Все новости →</button>
+        </div>
+        <div id="news-preview-list">
+          ${renderNewsPreview()}
+        </div>
       </div>
 
       <div class="glass-card" style="padding:16px">
@@ -90,10 +103,128 @@ const OverviewPage = (() => {
     // Загружаем оповещения
     await loadAlerts();
 
-    // Кнопка обновления
+    // Кнопка обновления оповещений
     Utils.el('alerts-refresh-btn')?.addEventListener('click', loadAlerts);
+
+    // === НОВОСТИ ===
+    // Инициализируем NewsManager (загружает кэш и стартует фоновое обновление)
+    NewsManager.init();
+
+    // Кнопка "Все новости"
+    Utils.el('news-show-all-btn')?.addEventListener('click', showNewsPanel);
+
+    // Обновляем отображение новостей каждые 3 минуты
+    if (newsInterval) clearInterval(newsInterval);
+    newsInterval = setInterval(() => {
+      updateNewsPreview();
+    }, 3 * 60 * 1000);
   }
 
+  function renderNewsPreview() {
+    const news = NewsManager.getLatest(4);
+    if (!news || !news.length) {
+      return '<div style="text-align:center;color:var(--text-muted);padding:12px 0;font-size:13px;">Загрузка новостей...</div>';
+    }
+    return news.map((n, i) => {
+      const tagLabels = {
+        crypto: '🪙 Крипто',
+        us: '🇺🇸 США',
+        ru: '🇷🇺 Россия',
+        stocks: '📊 Акции',
+      };
+      const tagLabel = tagLabels[n.tag] || '📰 Новости';
+      const tagColors = {
+        crypto: 'rgba(247,147,26,0.15)',
+        us: 'rgba(37,99,235,0.15)',
+        ru: 'rgba(220,38,38,0.15)',
+        stocks: 'rgba(59,158,255,0.15)',
+      };
+      const tagColor = tagColors[n.tag] || 'rgba(59,158,255,0.12)';
+      const tagTextColor = {
+        crypto: '#F7931A',
+        us: '#3B82F6',
+        ru: '#EF4444',
+        stocks: '#3B9EFF',
+      }[n.tag] || '#3B9EFF';
+
+      return `
+        <div class="news-item" onclick="window.open('${n.link || '#'}', '_blank')" style="${i > 0 ? 'border-top:1px solid var(--glass-border);' : ''}">
+          <div class="news-time">${n.time}</div>
+          <div class="news-body">
+            <div class="news-title" style="font-size:13px;line-height:1.4;">${n.title}</div>
+            <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+              <span style="font-size:9px;padding:2px 8px;border-radius:4px;background:${tagColor};color:${tagTextColor};font-weight:600;">${tagLabel}</span>
+              <span style="font-size:10px;color:var(--text-muted);">${n.source || 'Новости'}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function updateNewsPreview() {
+    const container = Utils.el('news-preview-list');
+    if (container) {
+      container.innerHTML = renderNewsPreview();
+    }
+  }
+
+  function showNewsPanel() {
+    let panel = Utils.el('news-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'news-panel';
+      panel.className = 'notif-panel';
+      panel.innerHTML = `
+        <div class="notif-panel-header">
+          <span class="notif-panel-title">📰 Все новости</span>
+          <button class="close-btn" id="close-news">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="news-filter-tabs" style="padding:12px 16px 0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;">
+          <button class="filter-tab active" data-filter="all">Все</button>
+          <button class="filter-tab" data-filter="crypto">🪙 Крипто</button>
+          <button class="filter-tab" data-filter="stocks">📊 Акции</button>
+          <button class="filter-tab" data-filter="us">🇺🇸 США</button>
+          <button class="filter-tab" data-filter="ru">🇷🇺 Россия</button>
+        </div>
+        <div class="notif-list" id="news-list-all">
+          ${NewsManager.renderNewsList('all')}
+        </div>
+      `;
+      document.getElementById('app').appendChild(panel);
+
+      // Фильтры
+      panel.querySelectorAll('.filter-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          panel.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const filter = btn.dataset.filter;
+          const list = panel.querySelector('#news-list-all');
+          if (list) {
+            list.innerHTML = NewsManager.renderNewsList(filter);
+          }
+        });
+      });
+
+      // Закрытие
+      panel.querySelector('#close-news').addEventListener('click', () => {
+        panel.classList.remove('open');
+      });
+    }
+    panel.classList.add('open');
+    // Обновляем список при открытии
+    const list = panel.querySelector('#news-list-all');
+    if (list) {
+      const activeFilter = panel.querySelector('.filter-tab.active')?.dataset.filter || 'all';
+      list.innerHTML = NewsManager.renderNewsList(activeFilter);
+    }
+  }
+
+  // === ОПОВЕЩЕНИЯ (не трогал) ===
   async function loadAlerts() {
     const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const list = Utils.el('alerts-list');
