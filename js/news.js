@@ -4,33 +4,39 @@ const NewsManager = (() => {
   let currentFilter = 'all';
   let isRefreshing = false;
 
-  // === ИСТОЧНИКИ НОВОСТЕЙ ===
+  // === ИСТОЧНИКИ НОВОСТЕЙ (только рабочие) ===
   const NEWS_SOURCES = [
+    // РБК - главные новости
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
       tag: 'ru',
       source: 'РБК',
     },
+    // Ведомости
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.vedomosti.ru%2Frss%2Fnews%2F',
       tag: 'ru',
       source: 'Ведомости',
     },
+    // Коммерсантъ
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
       tag: 'ru',
       source: 'Коммерсантъ',
     },
+    // Интерфакс
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.interfax.ru%2Frss.asp%3Fsec%3D1',
       tag: 'ru',
       source: 'Интерфакс',
     },
+    // Cointelegraph (крипто) через allorigins
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fcointelegraph.com%2Frss',
       tag: 'crypto',
       source: 'Cointelegraph',
     },
+    // MarketWatch (акции США) через allorigins
     {
       url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F',
       tag: 'us',
@@ -38,7 +44,7 @@ const NewsManager = (() => {
     },
   ];
 
-  // === ФОЛБЕК-НОВОСТИ ===
+  // === ФОЛБЕК-НОВОСТИ (реальные русские новости) ===
   function getFallbackNews() {
     const now = new Date();
     const ago = (m) => new Date(now - m * 60000);
@@ -56,11 +62,13 @@ const NewsManager = (() => {
     ];
   }
 
+  // === ПАРСИНГ RSS ИЗ XML ===
   function parseRSS(xmlText, defaultTag, sourceName) {
     try {
       const parser = new DOMParser();
       const xml = parser.parseFromString(xmlText, 'text/xml');
       
+      // Проверяем на ошибки парсинга
       if (xml.querySelector('parsererror')) {
         return [];
       }
@@ -74,9 +82,13 @@ const NewsManager = (() => {
         const pubDate = item.querySelector('pubDate')?.textContent || '';
         const description = item.querySelector('description')?.textContent || '';
         
+        // Пропускаем короткие заголовки
         if (title.length < 15) return;
         
+        // Определяем тег
         const tag = guessTag(title + ' ' + description, defaultTag);
+        
+        // Оставляем только нужные категории
         if (tag !== 'crypto' && tag !== 'us' && tag !== 'ru') return;
         
         results.push({
@@ -103,21 +115,24 @@ const NewsManager = (() => {
       .replace(/&gt;/g,'>')
       .replace(/&#39;/g,"'")
       .replace(/&quot;/g,'"')
-      .replace(/\[.*?\]/g, '')
+      .replace(/\[.*?\]/g, '') // убираем [текст] в начале
       .trim();
   }
 
   function guessTag(title, def) {
     const t = (title || '').toUpperCase();
     
-    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|COINBASE|BINANCE/i.test(t)) {
+    // КРИПТО
+    if (/BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|ADA|POLKADOT|LINK|AVAX|CRYPTO|BLOCKCHAIN|DEFI|NFT|TOKEN|MINING|HALVING|ALTCOIN|STABLECOIN|WEB3|METAVERSE|BITCOIN ETF|BITCOIN SPOT ETF|COINBASE|BINANCE|CRYPTO/i.test(t)) {
       return 'crypto';
     }
     
+    // РОССИЯ
     if (/[А-Яа-я]/.test(t) && /РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ/i.test(t)) {
       return 'ru';
     }
     
+    // США
     if (/APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|DOW|NASDAQ|FED|RATE|FOMC|BUFFETT|MUSK|ELON|JPMORGAN|GOLDMAN|BANK OF AMERICA|CITI|WELLS FARGO|BOEING|FORD|GM|DISNEY|ADOBE|SALESFORCE|ORACLE|IBM|INTEL|AMD|QUALCOMM|BROADCOM|CISCO/i.test(t)) {
       return 'us';
     }
@@ -125,12 +140,13 @@ const NewsManager = (() => {
     return def;
   }
 
-  // === ЛОКАЛЬНОЕ ВРЕМЯ УСТРОЙСТВА (без +3) ===
+  // === ЛОКАЛЬНОЕ ВРЕМЯ УСТРОЙСТВА (без привязки к Москве) ===
   function formatExactTime(dateStr) {
     try {
       const d = new Date(dateStr);
       const now = new Date();
       
+      // Используем локальное время устройства
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
@@ -148,8 +164,8 @@ const NewsManager = (() => {
         const month = String(d.getMonth() + 1).padStart(2, '0');
         return `${day}.${month} ${timeStr}`;
       }
-    } catch {
-      return 'недавно';
+    } catch { 
+      return 'недавно'; 
     }
   }
 
@@ -214,6 +230,7 @@ const NewsManager = (() => {
     try {
       console.log('🔄 Начинаем обновление новостей...');
       
+      // Загружаем все источники параллельно
       const promises = NEWS_SOURCES.map(async (source) => {
         try {
           const response = await fetch(source.url, {
@@ -247,13 +264,16 @@ const NewsManager = (() => {
 
       console.log(`📰 Всего загружено ${all.length} новостей`);
 
+      // Если ничего не загрузилось — используем фолбек
       if (!all.length) {
         console.log('⚠️ Используем фолбек-новости');
         all = getFallbackNews();
       }
 
+      // Сортировка по дате (свежие сверху)
       all.sort((a, b) => b.pubDate - a.pubDate);
       
+      // Дедупликация по заголовку
       const seen = new Set();
       all = all.filter(n => {
         const key = n.title.slice(0, 40);
@@ -262,6 +282,7 @@ const NewsManager = (() => {
         return true;
       });
 
+      // Оставляем 50 самых свежих
       all = all.slice(0, 50);
 
       if (all.length) {
@@ -277,6 +298,7 @@ const NewsManager = (() => {
       console.error('❌ Ошибка обновления новостей:', e);
       isRefreshing = false;
       
+      // Если есть кэш — возвращаем его
       if (cachedNews.length) {
         cachedNews = cachedNews.map(n => ({
           ...n,
@@ -286,6 +308,7 @@ const NewsManager = (() => {
         return cachedNews;
       }
       
+      // Иначе используем фолбек
       const fallback = getFallbackNews();
       cachedNews = fallback;
       saveToCache(fallback);
