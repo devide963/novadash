@@ -100,6 +100,7 @@ const MarketsPage = (() => {
     return results;
   }
 
+  // === ПОИСК ЧЕРЕЗ TRADINGVIEW (РАБОТАЕТ ДЛЯ ЛЮБЫХ АКТИВОВ) ===
   async function searchTV(query, type) {
     if (!query || query.length < 1) return [];
     try {
@@ -108,7 +109,7 @@ const MarketsPage = (() => {
       if (!resp.ok) return [];
       const data = await resp.json();
       return data.map(item => ({
-        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', '').replace('MOEX:', ''),
+        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', '').replace('MOEX:', '').replace('FOREXCOM:', '').replace('FX_IDC:', ''),
         fullName: item.description,
         type: item.type
       }));
@@ -162,23 +163,28 @@ const MarketsPage = (() => {
       searchInput.addEventListener('input', (e) => {
         clearTimeout(debounceTimer);
         const val = e.target.value.trim().toUpperCase();
+        searchQuery = val;
         if (val.length < 1) {
-          searchQuery = '';
+          // Если поиск пустой — показываем список вкладки
           refreshMarkets(true);
           return;
         }
+        // Поиск через TradingView
         debounceTimer = setTimeout(() => {
-          searchQuery = val;
-          refreshMarkets(true);
+          performSearch(val);
         }, 300);
       });
     }
 
+    // Принудительно обновляем при открытии
     await refreshMarkets(true);
 
     if (window.marketsUpdateInterval) clearInterval(window.marketsUpdateInterval);
     window.marketsUpdateInterval = setInterval(() => {
-      refreshMarkets(false);
+      // Не обновляем если активен поиск
+      if (!searchQuery || searchQuery.length < 1) {
+        refreshMarkets(false);
+      }
     }, 30000);
   }
 
@@ -321,7 +327,79 @@ const MarketsPage = (() => {
     }).join('');
   }
 
+  // === ПОИСК ЛЮБЫХ АКТИВОВ ЧЕРЕЗ TRADINGVIEW ===
+  async function performSearch(query) {
+    if (isUpdating) return;
+    isUpdating = true;
+
+    const list = Utils.el('markets-list');
+    const spinner = Utils.el('search-spinner');
+    
+    try {
+      if (spinner) spinner.style.display = 'block';
+      updateStatus('🔍 Поиск...', 'var(--blue-primary)');
+
+      // Сначала пробуем получить цену напрямую через бекенд
+      const priceData = await fetchPrice(query);
+      let results = [];
+
+      if (priceData && priceData.price > 0) {
+        results = [{
+          symbol: query,
+          fullName: query,
+          price: priceData.price,
+          change: priceData.change,
+          type: currentTab
+        }];
+      } else {
+        // Если не нашлось — ищем через TradingView
+        const tvResults = await searchTV(query, currentTab === 'crypto' ? 'crypto' : 'stock');
+        if (tvResults && tvResults.length > 0) {
+          const prices = await fetchPrices(tvResults.map(item => item.symbol));
+          results = tvResults.map(item => ({
+            symbol: item.symbol,
+            fullName: item.fullName || item.symbol,
+            price: prices[item.symbol]?.price || 0,
+            change: prices[item.symbol]?.change || null,
+            type: currentTab
+          }));
+        }
+      }
+
+      if (spinner) spinner.style.display = 'none';
+
+      if (!results || results.length === 0) {
+        list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${query}"</div>`;
+        updateStatus(`🔍 Ничего не найдено`, 'var(--red)');
+        isUpdating = false;
+        return;
+      }
+
+      results.sort((a, b) => {
+        if (a.price > 0 && b.price === 0) return -1;
+        if (a.price === 0 && b.price > 0) return 1;
+        return a.symbol.localeCompare(b.symbol);
+      });
+
+      list.innerHTML = renderMarketsList(results);
+      updateStatus(`🔍 Найдено ${results.length} результатов`, 'var(--text-muted)');
+
+    } catch (e) {
+      console.error('Ошибка поиска:', e);
+      if (spinner) spinner.style.display = 'none';
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка поиска</div>';
+      updateStatus('⚠️ Ошибка поиска', 'var(--red)');
+    }
+
+    isUpdating = false;
+  }
+
   async function refreshMarkets(force = false) {
+    // Если есть активный поиск — не обновляем список
+    if (searchQuery && searchQuery.length >= 1) {
+      return;
+    }
+
     if (isUpdating) return;
     isUpdating = true;
 
@@ -329,12 +407,6 @@ const MarketsPage = (() => {
     
     try {
       updateStatus('🔄 Обновление цен...', 'var(--blue-primary)');
-
-      if (searchQuery && searchQuery.length >= 1) {
-        await handleSearch(list);
-        isUpdating = false;
-        return;
-      }
 
       const symbols = getCurrentSymbols();
       if (!symbols || symbols.length === 0) {
@@ -394,54 +466,6 @@ const MarketsPage = (() => {
     }
 
     isUpdating = false;
-  }
-
-  async function handleSearch(list) {
-    try {
-      const priceData = await fetchPrice(searchQuery);
-      let results = [];
-
-      if (priceData && priceData.price > 0) {
-        results = [{
-          symbol: searchQuery,
-          fullName: searchQuery,
-          price: priceData.price,
-          change: priceData.change,
-          type: currentTab
-        }];
-      } else {
-        const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : 'stock');
-        if (tvResults && tvResults.length > 0) {
-          const prices = await fetchPrices(tvResults.map(item => item.symbol));
-          results = tvResults.map(item => ({
-            symbol: item.symbol,
-            fullName: item.fullName || item.symbol,
-            price: prices[item.symbol]?.price || 0,
-            change: prices[item.symbol]?.change || null,
-            type: currentTab
-          }));
-        }
-      }
-
-      if (!results || results.length === 0) {
-        list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
-        updateStatus('🔍 Результаты поиска', 'var(--text-muted)');
-        return;
-      }
-
-      results.sort((a, b) => {
-        if (a.price > 0 && b.price === 0) return -1;
-        if (a.price === 0 && b.price > 0) return 1;
-        return a.symbol.localeCompare(b.symbol);
-      });
-
-      list.innerHTML = renderMarketsList(results);
-      updateStatus(`🔍 Найдено ${results.length} результатов`, 'var(--text-muted)');
-
-    } catch (e) {
-      console.error('Ошибка поиска:', e);
-      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка поиска</div>';
-    }
   }
 
   function getCurrentSymbols() {
