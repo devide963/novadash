@@ -49,5 +49,18 @@ const Backend = {
         } catch {
             return { error: 'AI analysis failed' };
         }
+    },
+
+    // === НОВЫЙ МЕТОД ДЛЯ НОВОСТЕЙ ===
+    async getNewsRSS(url) {
+        try {
+            const resp = await fetch(`${this.baseUrl}/api/news-proxy?url=${encodeURIComponent(url)}`);
+            if (resp.ok) {
+                return await resp.text();
+            }
+            return null;
+        } catch {
+            return null;
+        }
     }
 };

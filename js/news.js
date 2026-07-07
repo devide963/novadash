@@ -3,47 +3,68 @@ const NewsManager = (() => {
   let cachedNews = [];
   let currentFilter = 'all';
   let isRefreshing = false;
-  let retryCount = 0;
 
-  // === ИСТОЧНИКИ С ЗАПАСНЫМИ ПРОКСИ ===
+  // === ИСТОЧНИКИ НОВОСТЕЙ ===
   const NEWS_SOURCES = [
+    // === РОССИЙСКИЕ ИСТОЧНИКИ (ПРИОРИТЕТ) ===
     {
-      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.rbc.ru%2Frss%2F',
-      backup: 'https://corsproxy.io/?https://www.rbc.ru/rss/',
+      url: 'https://www.rbc.ru/rss/',
       tag: 'ru',
       source: 'РБК',
     },
     {
-      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.vedomosti.ru%2Frss%2Fnews%2F',
-      backup: 'https://corsproxy.io/?https://www.vedomosti.ru/rss/news/',
+      url: 'https://www.vedomosti.ru/rss/news/',
       tag: 'ru',
       source: 'Ведомости',
     },
     {
-      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.kommersant.ru%2FRSS%2Fnews.xml',
-      backup: 'https://corsproxy.io/?https://www.kommersant.ru/RSS/news.xml',
+      url: 'https://www.kommersant.ru/RSS/news.xml',
       tag: 'ru',
       source: 'Коммерсантъ',
     },
     {
-      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.interfax.ru%2Frss.asp%3Fsec%3D1',
-      backup: 'https://corsproxy.io/?https://www.interfax.ru/rss.asp?sec=1',
+      url: 'https://www.interfax.ru/rss.asp?sec=1',
       tag: 'ru',
       source: 'Интерфакс',
     },
+    // === КРИПТО (английские) ===
     {
-      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Fcointelegraph.com%2Frss',
-      backup: 'https://corsproxy.io/?https://cointelegraph.com/rss',
+      url: 'https://cointelegraph.com/rss',
       tag: 'crypto',
       source: 'Cointelegraph',
     },
+    // === АКЦИИ США (английские) ===
     {
-      url: 'https://api.allorigins.win/raw?url=https%3A%2F%2Ffeeds.marketwatch.com%2Fmarketwatch%2Ftopstories%2F',
-      backup: 'https://corsproxy.io/?https://feeds.marketwatch.com/marketwatch/topstories/',
+      url: 'https://feeds.marketwatch.com/marketwatch/topstories/',
       tag: 'us',
       source: 'MarketWatch',
     },
   ];
+
+  // === ЗАГРУЗКА ЧЕРЕЗ БЕКЕНД ===
+  async function fetchViaBackend(url, sourceName) {
+    try {
+      console.log(`🔄 ${sourceName}: загружаем через бекенд...`);
+      const response = await fetch(
+        `https://worker-production-d2239.up.railway.app/api/news-proxy?url=${encodeURIComponent(url)}`,
+        {
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const text = await response.text();
+      console.log(`✅ ${sourceName}: загружено через бекенд`);
+      return text;
+      
+    } catch (e) {
+      console.warn(`❌ ${sourceName}: ошибка загрузки через бекенд (${e.message})`);
+      throw e;
+    }
+  }
 
   function parseRSS(xmlText, defaultTag, sourceName) {
     try {
@@ -68,7 +89,8 @@ const NewsManager = (() => {
         const fullText = title + ' ' + description;
         const tag = guessTag(fullText);
         
-        if (tag === 'crypto' || tag === 'us' || tag === 'ru') {
+        // Пропускаем только: крипта, Россия, США
+        if (tag === 'crypto' || tag === 'ru' || tag === 'us') {
           results.push({
             title: cleanTitle(title),
             link: link || '',
@@ -86,50 +108,6 @@ const NewsManager = (() => {
     }
   }
 
-  // === ЗАГРУЗКА С ПОВТОРНЫМИ ПОПЫТКАМИ ===
-  async function fetchWithRetry(url, backupUrl, sourceName, attempt = 0) {
-    const timeout = 15000;
-    
-    try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(timeout),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const text = await response.text();
-      return text;
-      
-    } catch (e) {
-      console.warn(`⚠️ ${sourceName}: основной URL не работает (${e.message})`);
-      
-      if (backupUrl && attempt === 0) {
-        console.log(`🔄 ${sourceName}: пробуем запасной URL...`);
-        try {
-          const response = await fetch(backupUrl, {
-            signal: AbortSignal.timeout(timeout),
-          });
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-          
-          const text = await response.text();
-          console.log(`✅ ${sourceName}: запасной URL сработал`);
-          return text;
-          
-        } catch (e2) {
-          console.warn(`❌ ${sourceName}: запасной URL тоже не работает (${e2.message})`);
-          throw e2;
-        }
-      }
-      
-      throw e;
-    }
-  }
-
   function cleanTitle(t) {
     return t
       .replace(/&amp;/g,'&')
@@ -141,26 +119,28 @@ const NewsManager = (() => {
       .trim();
   }
 
-  // === ВСЕ КРИПТОВАЛЮТЫ, АКЦИИ США И РОССИИ ===
+  // === ФИЛЬТРАЦИЯ: РОССИЯ (приоритет), КРИПТА, США ===
   function guessTag(text) {
     const t = text.toUpperCase();
     
-    // === ВСЕ КРИПТОВАЛЮТЫ ===
-    const cryptoWords = /\b(BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|DOGECOIN|ADA|CARDANO|POLKADOT|DOT|LINK|CHAINLINK|AVAX|AVALANCHE|MATIC|POLYGON|UNI|UNISWAP|ATOM|COSMOS|LTC|LITECOIN|BCH|BITCOINCASH|XLM|STELLAR|ALGO|ALGORAND|VET|VEHICLE|ICP|INTERNETCOMPUTER|FIL|FILEIO|ETC|ETHCLASSIC|AAVE|MKR|MAKER|COMP|COMPOUND|YFI|YEARN|CRV|CURVE|SUSHI|SUSHISWAP|CAKE|PANCAKE|BAKE|BAKERY|1INCH|ENJ|ENJIN|CHZ|CHILIZ|MANA|DECENTRALAND|SAND|THESANDBOX|AXS|AXIEINFINITY|SHIB|SHIBAINU|FLOKI|PEPE|BONK|WIF|NOT|TON|NEAR|ARB|ARBITRUM|OP|OPTIMISM|BASE|BLAST|MODE|STRK|STARKNET|ZKSYNC|ZK|APT|APOS|SUI|SEI|INJ|INJECTIVE|TIA|CELESTIA|DYM|DYMENSION|PENDLE|RNDR|RENDER|FET|OCEAN|AGIX|FETCH|AI|WLD|WORLDCOIN|ARKM|TAO|CRYPTO|BLOCKCHAIN|WEB3|DEFI|NFT|TOKEN|ALTCOIN|STABLECOIN|METAVERSE|COINBASE|BINANCE|BYBIT|OKX|KRAKEN|GEMINI|HALVING|MINING|STAKING|AIRDROP|WHITELIST|IDO|IEO|LAUNCHPAD|LAUNCHPOOL|BULL|BEAR|PUMP|DUMP|MOON|LAMBO|WHALE|SHILL|FUD|ATH|ALLTIMEHIGH|ATL|ALLTIMELOW|MARKETCAP|LIQUIDITY|LIQUIDATION|LEVERAGE|MARGIN|FUTURES|OPTIONS|PERPETUAL|SWAP|BRIDGE|LAYER2|LAYERZERO|ZKSYNCERA|STARKWARE|ARBITRUMONE|OPTIMISM|BASENETWORK|BLASTNETWORK|MODENETWORK|SCROLL|LINEA|MANTA|MANTLE|MNT|METH|EIGEN|EIGENLAYER|RESTAKING|LIQUIDRESTAKING|REZ|PENDLEFINANCE|EETH|WEETH|RSWETH|EZETH|PUFETH)\b/i;
+    // === 1. РОССИЯ (есть русские буквы) ===
+    if (/[А-Яа-я]/.test(text)) {
+      // Ключевые слова для российских новостей
+      const ruWords = /\b(РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|СБЕРБАНК|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ|АКЦИЯ|РЫНОК|НОВАТЭК|СУРГУТНЕФТЕГАЗ|ТАТНЕФТЬ|АЛРОСА|МАГНИТ|МТС|МЕГАФОН|РОСТЕЛЕКОМ|АЭРОФЛОТ|СЕВЕРСТАЛЬ|НЛМК|ММК|РУСАЛ|НЕФТЬ|ГАЗ|ЭНЕРГЕТИКА|МЕТАЛЛУРГИЯ|ЭКОНОМИКА|ФИНАНСЫ|БАНК|КРЕДИТ|ИПОТЕКА|СТАВКА|КЛЮЧЕВАЯ СТАВКА|ИНФЛЯЦИЯ|БЮДЖЕТ|ЗОЛОТО|ТРАНСПОРТ|ЛОГИСТИКА|СВЯЗЬ|ТЕЛЕКОМ|ЦИФРОВИЗАЦИЯ|ИИ|ДРОНЫ|ЭЛЕКТРОМОБИЛИ|СПГ|ГАЗПРОВОД|НЕФТЕПРОВОД|ЭЛЕКТРОЭНЕРГИЯ|ТАРИФЫ|СУБСИДИИ|ПЕНСИИ|ЗАРПЛАТА|НАЛОГИ|НДС|НДФЛ|ПРИБЫЛЬ|АКТИВЫ|ИНВЕСТИЦИИ|ДИВИДЕНДЫ|КУРС|БИРЖА|ТОРГИ|ЛИКВИДНОСТЬ|ВОЛАТИЛЬНОСТЬ|КРИЗИС|РЕЦЕССИЯ|РОСТ|ПАДЕНИЕ|ТРЕНД|ПРОГНОЗ|АНАЛИЗ|ОТЧЁТ|СТАТИСТИКА|ИНДЕКСЫ|МОСБИРЖА|СПБ БИРЖА|ФОНДОВЫЙ РЫНОК|РЫНОК АКЦИЙ|РЫНОК ОБЛИГАЦИЙ|ДОЛЛАР|ЕВРО|ЮАНЬ|КИТАЙ|САНКЦИИ|ИМПОРТ|ЭКСПОРТ|ГОСДОЛГ|ФНБ|ЗОЛОТОВАЛЮТНЫЕ РЕЗЕРВЫ)\b/i;
+      if (ruWords.test(t)) {
+        return 'ru';
+      }
+      return 'other';
+    }
+    
+    // === 2. КРИПТОВАЛЮТЫ ===
+    const cryptoWords = /\b(BTC|BITCOIN|ETH|ETHEREUM|SOL|SOLANA|XRP|DOGE|DOGECOIN|ADA|CARDANO|POLKADOT|DOT|LINK|CHAINLINK|AVAX|AVALANCHE|MATIC|POLYGON|UNI|UNISWAP|ATOM|COSMOS|LTC|LITECOIN|BCH|XLM|STELLAR|ALGO|ALGORAND|VET|ICP|FIL|ETC|AAVE|MKR|COMP|YFI|CRV|SUSHI|CAKE|1INCH|ENJ|CHZ|MANA|SAND|AXS|SHIB|FLOKI|PEPE|BONK|NOT|TON|NEAR|ARB|OP|BASE|BLAST|STRK|ZKSYNC|APT|SUI|SEI|INJ|TIA|PENDLE|RNDR|FET|WLD|ARKM|TAO|CRYPTO|CRYPTOCURRENCY|BLOCKCHAIN|WEB3|DEFI|NFT|TOKEN|ALTCOIN|STABLECOIN|METAVERSE|COINBASE|BINANCE|BYBIT|OKX|KRAKEN|HALVING|MINING|STAKING|AIRDROP|MARKETCAP|LIQUIDITY|LEVERAGE|FUTURES|SWAP|BRIDGE|LAYER2|RESTAKING|BITCOINETF|ETHETF|BULLRUN|BEARMARKET|PUMP|DUMP|MOON|WHALE|ATH|ATL|WALLET|EXCHANGE|TRADING|HODL|REKT|GAS|YIELD|FARMING|POOL|VALIDATOR|NODE|MAINNET|UPGRADE|FORK|AIRDROP|IDO|IEO|NFTCOLLECTION|OPENSEA|BLUR|BAYC|PUNKS|AZUKI|DEX|CEX|AMM|KYC)\b/i;
     if (cryptoWords.test(t)) {
       return 'crypto';
     }
     
-    // === ВСЕ РОССИЙСКИЕ АКЦИИ ===
-    if (/[А-Яа-я]/.test(text)) {
-      const ruWords = /\b(РФ|РОССИЯ|RUSSIA|RUSSIAN|МОСКВА|MOSCOW|РУБЛЬ|RUBLE|СБЕР|СБЕРБАНК|ГАЗПРОМ|РОСНЕФТЬ|ЛУКОЙЛ|ЯНДЕКС|ВТБ|СОВКОМБАНК|ТИНЬКОФФ|ММВБ|RTS|MOEX|РУБ|ПУТИН|КРЕМЛЬ|ДУМА|ПРАВИТЕЛЬСТВО|ЦБ|МИНФИН|ИНДЕКС МОСБИРЖИ|АКЦИЯ|РЫНОК|НОВАТЭК|СУРГУТНЕФТЕГАЗ|ТАТНЕФТЬ|БАШНЕФТЬ|ГМК НОРИЛЬСКИЙ НИКЕЛЬ|АЛРОСА|МАГНИТ|МТС|МЕГАФОН|РОСТЕЛЕКОМ|АЭРОФЛОТ|СОВКОМФЛОТ|РЖД|ТРАНСНЕФТЬ|ИНТЕР РАО|РУСГИДРО|ЮНИПРО|ФСК ЕЭС|РОССЕТИ|МОСЭНЕРГО|ЛЕНЭНЕРГО|РАСПАДСКАЯ|МЕЧЕЛ|СЕВЕРСТАЛЬ|НЛМК|ММК|ТМК|ОМК|СИБУР|УРАЛКАЛИЙ|АКРОН|ФОСАГРО|РУСАЛ|ПОЛИМЕТАЛЛ|СЕЛИГДАР|ЗОЛОТО|СЕРЕБРО|ПЛАТИНА|АЛМАЗЫ|ИНДЕКС ММВБ|ИНДЕКС РТС|МОСБИРЖА|СПБ БИРЖА|ДИВИДЕНДЫ|КУРС РУБЛЯ|КЛЮЧЕВАЯ СТАВКА|ИНФЛЯЦИЯ|САНКЦИИ|ИМПОРТОЗАМЕЩЕНИЕ|ГОСДОЛГ|БЮДЖЕТ|ФНБ|ЗОЛОТОВАЛЮТНЫЕ РЕЗЕРВЫ|НЕФТЬ|ГАЗ|НЕФТЕГАЗ|ЭНЕРГЕТИКА|ТЭК|ЭЛЕКТРОЭНЕРГЕТИКА|МЕТАЛЛУРГИЯ|ХИМИЧЕСКАЯ ПРОМЫШЛЕННОСТЬ|МАШИНОСТРОЕНИЕ|ОПК|ВПК|АВИАПРОМ|СУДОСТРОЕНИЕ|АПК|СЕЛЬСКОЕ ХОЗЯЙСТВО|ПИЩЕВАЯ ПРОМЫШЛЕННОСТЬ|РИТЕЙЛ|ТОРГОВЛЯ|СТРОИТЕЛЬСТВО|НЕДВИЖИМОСТЬ|ИПОТЕКА|ЖКХ|ТРАНСПОРТ|ЛОГИСТИКА|СВЯЗЬ|ТЕЛЕКОМ|ИНФОРМАЦИОННЫЕ ТЕХНОЛОГИИ|ИТ|ЦИФРОВИЗАЦИЯ|ИСКУССТВЕННЫЙ ИНТЕЛЛЕКТ|РОБОТЫ|АВТОМАТИЗАЦИЯ|ДРОНЫ|БЕСПИЛОТНИКИ|ЭЛЕКТРОМОБИЛИ|ЗЕЛЕНАЯ ЭНЕРГЕТИКА|ВИЭ|СОЛНЕЧНАЯ ЭНЕРГЕТИКА|ВЕТРОЭНЕРГЕТИКА|ГИДРОЭНЕРГЕТИКА|АТОМНАЯ ЭНЕРГЕТИКА|РОСАТОМ|МОСКОВСКАЯ БИРЖА)\b/i;
-      if (ruWords.test(t)) {
-        return 'ru';
-      }
-    }
-    
-    // === ВСЕ АМЕРИКАНСКИЕ АКЦИИ ===
-    const usWords = /\b(APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|SPY|DOW|NASDAQ|FED|FOMC|RATE|BUFFETT|MUSK|ELON|JPMORGAN|JPM|GOLDMAN|GS|BANK OF AMERICA|BAC|CITI|C|WELLS FARGO|WFC|BOEING|BA|FORD|F|GM|DISNEY|DIS|ADOBE|ADBE|SALESFORCE|CRM|ORACLE|ORCL|IBM|INTEL|INTC|AMD|QUALCOMM|QCOM|BROADCOM|AVGO|CISCO|CSCO|STOCK|SHARES|EARNINGS|DIVIDEND|S&P 500|DOW JONES|NASDAQ COMPOSITE|RUSSELL 2000|VIX|VOLATILITY|TREASURY|BOND|YIELD|INFLATION|UNEMPLOYMENT|JOBS|PAYROLL|CPI|PPI|GDP|ECONOMY|RECESSION|BEAR MARKET|BULL MARKET|FED RATE|FOMC MEETING|JEROME POWELL|INTEREST RATE|MORTGAGE RATE|HOUSING MARKET|RETAIL SALES|CONSUMER SPENDING|CONSUMER CONFIDENCE|BUSINESS INVESTMENT|MANUFACTURING|SERVICES|PMI|ISM|FACTORY ORDERS|DURABLE GOODS|TRADE BALANCE|CURRENT ACCOUNT|FOREIGN EXCHANGE|FOREX|USD|DOLLAR|CURRENCY|COMMODITIES|OIL|GOLD|SILVER|COPPER|WHEAT|CORN|SOYBEANS|NATURAL GAS|GASOLINE|CRUDE OIL|BRENT|WTI|TECHNOLOGY|SOFTWARE|CLOUD|MACHINE LEARNING|DATA CENTER|SEMICONDUCTOR|CHIP|CHIPS|FAB|FOUNDRY|TSM|ASML|TXN|TEXAS INSTRUMENTS|MU|MICRON|LRCX|LAM RESEARCH|KLAC|KLA|AMAT|APPLIED MATERIALS|ADI|ANALOG DEVICES|NXPI|NXP|ON|ONSEMI|SWKS|SKYWORKS|QRVO|QORVO|MPWR|MONOLITHIC POWER|MCHP|MICROCHIP|SMCI|SUPER MICRO|DELL|HP|HPE|NTAP|NETAPP|PSTG|PURE STORAGE|WDC|WESTERN DIGITAL|STX|SEAGATE|SAMSUNG|SK HYNIX|TOSHIBA|MICRON|RENESAS|ST MICROELECTRONICS|INFINEON|MEDIATEK|UBER|LYFT|DOORDASH|AIRBNB|BOOKING|EXPEDIA|TRIPADVISOR|CARNIVAL|ROYAL CARIBBEAN|NORWEGIAN|DELTA|UNITED|AMERICAN|SOUTHWEST|JETBLUE|SPIRIT|FRONTIER|CRUISE|TOURISM|TRAVEL|HOSPITALITY|RESTAURANT|MCDONALDS|MCD|YUM|YUM BRANDS|KFC|TACO BELL|PIZZA HUT|DOMINO|DPZ|PAPA JOHNS|PZZA|WENDY|WEN|SHAKE SHACK|SHAK|CHIPOTLE|CMG|STARBUCKS|SBUX|COCA COLA|KO|PEPSICO|PEP|MONSTER|MNST|DR PEPPER|KDP|KEURIG|GREEN MOUNTAIN|GMCR|NESTLE|NSRGY|UNILEVER|UL|PROCTER|PG|JOHNSON|JNJ|PFIZER|PFE|MERCK|MRK|ABBVIE|ABBV|ELI LILLY|LLY|NOVARTIS|NVS|ROCHE|RHHBY|GSK|ASTRAZENECA|AZN|BRISTOL|BMY|SANOFI|SNY|REGENERON|REGN|VERTEX|VRTX|AMGEN|AMGN|GILEAD|GILD|CELGENE|CELG|BIOGEN|BIIB|ILLUMINA|ILMN|THERMO FISHER|TMO|DANAHER|DHR|IQVIA|IQV|CHARLES RIVER|CRL|LABORATORY|LH|QUEST|DGX|MEDTRONIC|MDT|ABBOTT|ABT|BOSTON SCIENTIFIC|BSX|STRYKER|SYK|INTUITIVE|ISRG|EDWARDS|EW|ZOLL|MASIMO|MASI|RESMED|RMD|PHILIPS|PHG|SIEMENS|SIEGY|GE|GENERAL ELECTRIC|HONEYWELL|HON|UNITED TECHNOLOGIES|UTX|RAYTHEON|RTN|LOCKHEED|LMT|NORTHROP|NOC|GENERAL DYNAMICS|GD|L3HARRIS|LHX|TEXTRON|TXT|HUNTINGTON|HII|SPACEX|STARLINK|STARSHIP|ROCKET|LAUNCH|SATELLITE|SPACE|AEROSPACE|DEFENSE|MILITARY|PENTAGON|DOD|HEALTHCARE|PHARMACEUTICAL|BIOTECH|GENETICS|CRISPR|GENE|RNA|DNA|CANCER|IMMUNOLOGY|VACCINE|COVID|PANDEMIC|VIRUS|BACTERIA|ANTIBIOTIC|ANTIVIRAL|INSULIN|DIABETES|OBESITY|WEIGHT LOSS|OZEMPIC|WEGOVY|MOUNJARO|ZEPBOUND|NOVO|NOVO NORDISK|NVO|VIKING|VKTX|ALTRA|ALT|MEDI|AMERICAN|UNITED|STATES|US|USA|AMERICA|NEW YORK|NYC|MANHATTAN|BROOKLYN|QUEENS|BRONX|STATEN ISLAND|LONG ISLAND|ALBANY|BUFFALO|ROCHESTER|SYRACUSE|BINGHAMTON|ITHACA|SARATOGA|LAKE GEORGE|NIAGARA|ERIE|ONTARIO|CHAMPLAIN|HUDSON|MOHAWK|ADIRONDACK|CATSKILL|POCONO|BERKSHIRE|ROCKY MOUNTAINS|APPALACHIAN|SMOKY MOUNTAINS|OZARK|SIERRA NEVADA|CASCADES|COAST RANGE|ALLEGHENY|BLUE RIDGE|SHENANDOAH|ACADIA|GLACIER|YELLOWSTONE|YOSEMITE|ZION|ARCHES|BRYCE|CANYONLANDS|GRAND CANYON|MOUNT RUSHMORE|BADLANDS|BLACK HILLS)\b/i;
+    // === 3. АКЦИИ США ===
+    const usWords = /\b(APPLE|AAPL|MICROSOFT|MSFT|NVIDIA|NVDA|GOOGLE|GOOGL|AMAZON|AMZN|META|TESLA|TSLA|NETFLIX|NFLX|WALL STREET|S&P|SPY|DOW|NASDAQ|FED|FOMC|JPMORGAN|JPM|GOLDMAN|GS|BANK OF AMERICA|BAC|CITI|WELLS FARGO|WFC|BOEING|BA|FORD|F|GM|DISNEY|DIS|ADOBE|ADBE|SALESFORCE|CRM|ORACLE|ORCL|IBM|INTEL|INTC|AMD|QUALCOMM|QCOM|BROADCOM|AVGO|CISCO|CSCO|EARNINGS|DIVIDEND|RUSSELL2000|VIX|INFLATION|UNEMPLOYMENT|CPI|PPI|GDP|ECONOMY|RECESSION|BEARMARKET|BULLMARKET|INTERESTRATE|MORTGAGE|HOUSING|RETAILSALES|CONSUMER|MANUFACTURING|SERVICES|PMI|ISM|USD|DOLLAR|COMMODITIES|OIL|GOLD|SILVER|TECHNOLOGY|SOFTWARE|CLOUD|SEMICONDUCTOR|CHIP|TSM|ASML|TXN|MU|LRCX|KLAC|AMAT|NXPI|ON|SWKS|MPWR|SMCI|DELL|HP|WDC|SEAGATE|UBER|LYFT|AIRBNB|STARBUCKS|SBUX|COCACOLA|KO|PEPSICO|PEP|MCDONALDS|MCD|PFIZER|PFE|MERCK|MRK|JOHNSON|JNJ|ELILILLY|LLY|NOVARTIS|NVS|GE|HONEYWELL|RAYTHEON|LOCKHEED|LMT|NORTHROP|NOC|SPACEX|STARLINK|AEROSPACE|DEFENSE|HEALTHCARE|PHARMACEUTICAL|BIOTECH|VACCINE)\b/i;
     if (usWords.test(t)) {
       return 'us';
     }
@@ -232,6 +212,18 @@ const NewsManager = (() => {
     }
   }
 
+  // === СОРТИРОВКА: СНАЧАЛА РУССКИЕ, ПОТОМ АНГЛИЙСКИЕ ===
+  function sortNewsByPriority(news) {
+    const priority = { ru: 0, crypto: 1, us: 2 };
+    return news.sort((a, b) => {
+      // Сначала по приоритету (ru > crypto > us)
+      const priorityDiff = (priority[a.tag] ?? 3) - (priority[b.tag] ?? 3);
+      if (priorityDiff !== 0) return priorityDiff;
+      // Затем по дате (свежие сверху)
+      return b.pubDate - a.pubDate;
+    });
+  }
+
   // === ОСНОВНЫЕ ФУНКЦИИ ===
   async function fetchAll(force = false) {
     if (!force && cachedNews.length) {
@@ -259,13 +251,12 @@ const NewsManager = (() => {
       
       const promises = NEWS_SOURCES.map(async (source) => {
         try {
-          const text = await fetchWithRetry(source.url, source.backup, source.source);
+          const text = await fetchViaBackend(source.url, source.source);
           const parsed = parseRSS(text, source.tag, source.source);
           if (parsed.length > 0) {
-            console.log(`✅ ${source.source}: ${parsed.length} новостей (только крипта/акции)`);
+            console.log(`✅ ${source.source}: ${parsed.length} новостей`);
           }
           return parsed;
-          
         } catch (e) {
           console.warn(`❌ ${source.source}: ${e.message}`);
           return [];
@@ -281,7 +272,7 @@ const NewsManager = (() => {
         }
       });
 
-      console.log(`📰 Всего отфильтровано ${all.length} новостей (только крипта и акции)`);
+      console.log(`📰 Всего загружено ${all.length} новостей`);
 
       if (!all.length) {
         console.log('⚠️ Новости не загрузились');
@@ -292,8 +283,10 @@ const NewsManager = (() => {
         return [];
       }
 
-      all.sort((a, b) => b.pubDate - a.pubDate);
+      // === СОРТИРУЕМ: СНАЧАЛА РУССКИЕ ===
+      all = sortNewsByPriority(all);
       
+      // Дедупликация
       const seen = new Set();
       all = all.filter(n => {
         const key = n.title.slice(0, 40);
@@ -302,12 +295,21 @@ const NewsManager = (() => {
         return true;
       });
 
-      all = all.slice(0, 50);
+      // Оставляем до 50 новостей (но стараемся сохранить все русские)
+      const ruNews = all.filter(n => n.tag === 'ru');
+      const otherNews = all.filter(n => n.tag !== 'ru');
+      
+      // Сначала все русские, потом остальные (до 50 всего)
+      let finalNews = [...ruNews];
+      const remainingSlots = 50 - ruNews.length;
+      if (remainingSlots > 0) {
+        finalNews = finalNews.concat(otherNews.slice(0, remainingSlots));
+      }
 
-      if (all.length) {
-        cachedNews = all;
-        saveToCache(all);
-        console.log(`✅ Сохранено ${all.length} новостей в кэш`);
+      if (finalNews.length) {
+        cachedNews = finalNews;
+        saveToCache(finalNews);
+        console.log(`✅ Сохранено ${finalNews.length} новостей в кэш (${ruNews.length} русских)`);
       }
 
       isRefreshing = false;
@@ -372,7 +374,7 @@ const NewsManager = (() => {
   function startPolling() {
     setInterval(() => {
       refreshInBackground();
-    }, 30 * 1000);
+    }, 60 * 1000);
   }
 
   function getLatest(n = 3) {
