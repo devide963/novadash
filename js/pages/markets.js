@@ -47,6 +47,11 @@ const MarketsPage = (() => {
     }
   }
 
+  // === ОЧИСТКА КЭША ПРИ ПЕРЕКЛЮЧЕНИИ ВКЛАДКИ ===
+  function clearPriceCache() {
+    priceCache = {};
+  }
+
   function getIconHtml(symbol, type) {
     const base = 'https://s3-symbol-logo.tradingview.com';
     if (type === 'crypto') {
@@ -58,7 +63,6 @@ const MarketsPage = (() => {
     }
   }
 
-  // === ОРИГИНАЛЬНАЯ fetchPrice (без изменений) ===
   async function fetchPrice(symbol) {
     if (priceCache[symbol]) return priceCache[symbol];
     try {
@@ -129,7 +133,7 @@ const MarketsPage = (() => {
       <div class="section-title mb-12">Рынки</div>
       
       <div id="markets-update-status" style="text-align:right;font-size:11px;color:var(--text-muted);padding:4px 0;margin-bottom:4px;">
-        ${loadMarketsCache() ? '📊 Данные из кэша' : '⏳ Загрузка...'}
+        ⏳ Загрузка...
       </div>
       
       <div class="search-bar">
@@ -146,12 +150,11 @@ const MarketsPage = (() => {
 
     renderTabs();
 
+    // Сразу показываем кэш
     const cache = loadMarketsCache();
-    if (cache && cache.markets && cache.markets.length) {
-      const list = Utils.el('markets-list');
-      if (list) {
-        list.innerHTML = renderMarketsList(cache.markets);
-      }
+    const list = Utils.el('markets-list');
+    if (cache && cache.markets && cache.markets.length && list) {
+      list.innerHTML = renderMarketsList(cache.markets);
     }
 
     const searchInput = Utils.el('market-search');
@@ -172,11 +175,12 @@ const MarketsPage = (() => {
       });
     }
 
-    await renderTab();
+    // Принудительно обновляем при открытии
+    await refreshMarkets(true);
 
     if (window.marketsUpdateInterval) clearInterval(window.marketsUpdateInterval);
     window.marketsUpdateInterval = setInterval(() => {
-      refreshMarkets();
+      refreshMarkets(false);
     }, 30000);
   }
 
@@ -223,8 +227,10 @@ const MarketsPage = (() => {
         searchQuery = '';
         const searchInput = Utils.el('market-search');
         if (searchInput) searchInput.value = '';
+        clearPriceCache();
         renderTabs();
-        renderTab();
+        // При переключении вкладки - принудительно обновляем
+        refreshMarkets(true);
       });
     });
 
@@ -236,13 +242,14 @@ const MarketsPage = (() => {
         searchQuery = '';
         const searchInput = Utils.el('market-search');
         if (searchInput) searchInput.value = '';
+        clearPriceCache();
         renderTabs();
-        renderTab();
+        // При переключении подвкладки - принудительно обновляем
+        refreshMarkets(true);
       });
     });
   }
 
-  // === РЕНДЕР СПИСКА (С ПОДДЕРЖКОЙ РУБЛЕЙ) ===
   function renderMarketsList(results) {
     if (!results || results.length === 0) {
       return '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных для отображения</div>';
@@ -286,7 +293,7 @@ const MarketsPage = (() => {
     }).join('');
   }
 
-  async function refreshMarkets() {
+  async function refreshMarkets(force = false) {
     if (isUpdating) return;
     isUpdating = true;
 
@@ -301,7 +308,27 @@ const MarketsPage = (() => {
 
       const symbols = getCurrentSymbols();
       if (symbols && symbols.length > 0) {
-        priceCache = {};
+        // Проверяем кэш
+        const cacheData = loadMarketsCache();
+        const cacheAge = cacheData?.timestamp ? Date.now() - cacheData.timestamp : Infinity;
+        
+        // Если кэш свежий (менее 30 сек) и не принудительно — используем его
+        if (!force && cacheData && cacheData.markets && cacheData.markets.length && cacheAge < 30000) {
+          if (list) {
+            list.innerHTML = renderMarketsList(cacheData.markets);
+          }
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          if (statusEl) {
+            statusEl.innerHTML = `📊 Данные из кэша (${timeStr})`;
+            statusEl.style.color = 'var(--text-muted)';
+          }
+          isUpdating = false;
+          return;
+        }
+
+        // Загружаем свежие данные
+        clearPriceCache();
         const prices = await fetchPrices(symbols);
         const results = symbols.map(sym => ({
           symbol: sym,
@@ -354,98 +381,7 @@ const MarketsPage = (() => {
   }
 
   async function renderTab() {
-    if (isLoading) return;
-    isLoading = true;
-
-    const list = Utils.el('markets-list');
-    const spinner = Utils.el('search-spinner');
-    if (spinner) spinner.style.display = 'none';
-
-    const cache = loadMarketsCache();
-    if (cache && cache.markets && cache.markets.length && !searchQuery) {
-      list.innerHTML = renderMarketsList(cache.markets);
-    } else if (!searchQuery) {
-      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
-    }
-
-    try {
-      let results = [];
-
-      if (searchQuery && searchQuery.length >= 1) {
-        if (spinner) spinner.style.display = 'block';
-        const priceData = await fetchPrice(searchQuery);
-        if (spinner) spinner.style.display = 'none';
-
-        if (priceData && priceData.price > 0) {
-          results = [{
-            symbol: searchQuery,
-            fullName: searchQuery,
-            price: priceData.price,
-            change: priceData.change,
-            type: currentTab
-          }];
-        } else {
-          const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : 'stock');
-          if (tvResults && tvResults.length > 0) {
-            const prices = await fetchPrices(tvResults.map(item => item.symbol));
-            results = tvResults.map(item => ({
-              symbol: item.symbol,
-              fullName: item.fullName || item.symbol,
-              price: prices[item.symbol]?.price || 0,
-              change: prices[item.symbol]?.change || null,
-              type: currentTab
-            }));
-          }
-        }
-
-        if (!results || results.length === 0) {
-          list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
-          isLoading = false;
-          return;
-        }
-
-      } else {
-        let symbols = getCurrentSymbols();
-
-        if (symbols && symbols.length > 0) {
-          const cacheData = loadMarketsCache();
-          if (cacheData && cacheData.markets && cacheData.markets.length && 
-              cacheData.timestamp && (Date.now() - cacheData.timestamp) < 30000) {
-            results = cacheData.markets;
-          } else {
-            const prices = await fetchPrices(symbols);
-            results = symbols.map(sym => ({
-              symbol: sym,
-              fullName: sym,
-              price: prices[sym]?.price || 0,
-              change: prices[sym]?.change || null,
-              type: currentTab
-            }));
-            saveMarketsCache(results);
-          }
-        }
-      }
-
-      if (!results || results.length === 0) {
-        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных для отображения</div>';
-        isLoading = false;
-        return;
-      }
-
-      results.sort((a, b) => {
-        if (a.price > 0 && b.price === 0) return -1;
-        if (a.price === 0 && b.price > 0) return 1;
-        return a.symbol.localeCompare(b.symbol);
-      });
-
-      list.innerHTML = renderMarketsList(results);
-
-    } catch (e) {
-      console.error('Ошибка рендера рынков:', e);
-      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка загрузки данных</div>';
-    }
-
-    isLoading = false;
+    await refreshMarkets(true);
   }
 
   return { render };
