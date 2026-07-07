@@ -6,7 +6,7 @@ const MarketsPage = (() => {
   let priceCache = {};
   let isLoading = false;
 
-  // === КЭШ ДЛЯ РЫНКОВ (ОТДЕЛЬНО ДЛЯ КАЖДОЙ ВКЛАДКИ) ===
+  // === КЭШ ===
   const CACHE_KEY_PREFIX = 'nova_markets_cache_';
   let isUpdating = false;
 
@@ -58,38 +58,22 @@ const MarketsPage = (() => {
     }
   }
 
-  // === ИСПРАВЛЕННАЯ ФУНКЦИЯ fetchPrice ===
+  // === ОРИГИНАЛЬНАЯ fetchPrice (без изменений) ===
   async function fetchPrice(symbol) {
     if (priceCache[symbol]) return priceCache[symbol];
     try {
-      // === ЕСЛИ РОССИЙСКАЯ АКЦИЯ — ТОЛЬКО getStock ===
-      if (currentTab === 'stocks' && currentSubTab === 'ru') {
-        const data = await Backend.getStock(symbol);
-        if (data && data.price) {
-          const change = data.change !== undefined && data.change !== null ? data.change : null;
-          priceCache[symbol] = { price: data.price, change: change };
-          return priceCache[symbol];
-        }
-        priceCache[symbol] = { price: 0, change: null };
-        return priceCache[symbol];
-      }
-      
-      // === КРИПТА И АМЕРИКАНСКИЕ АКЦИИ ===
       let data = await Backend.getPrice(symbol);
       if (data && data.price) {
         const change = data.change !== undefined && data.change !== null ? data.change : null;
         priceCache[symbol] = { price: data.price, change: change };
         return priceCache[symbol];
       }
-      
-      // Если не нашлось — пробуем getStock (для американских акций)
       data = await Backend.getStock(symbol);
       if (data && data.price) {
         const change = data.change !== undefined && data.change !== null ? data.change : null;
         priceCache[symbol] = { price: data.price, change: change };
         return priceCache[symbol];
       }
-      
       priceCache[symbol] = { price: 0, change: null };
       return priceCache[symbol];
     } catch (e) {
@@ -258,7 +242,7 @@ const MarketsPage = (() => {
     });
   }
 
-  // === ИСПРАВЛЕННАЯ ФУНКЦИЯ РЕНДЕРА СПИСКА ===
+  // === РЕНДЕР СПИСКА (С ПОДДЕРЖКОЙ РУБЛЕЙ) ===
   function renderMarketsList(results) {
     if (!results || results.length === 0) {
       return '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных для отображения</div>';
