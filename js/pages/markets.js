@@ -17,6 +17,7 @@ const MarketsPage = (() => {
     return `${CACHE_KEY_PREFIX}${currentTab}`;
   }
 
+  // === ЗАГРУЗКА КЭША ДЛЯ ТЕКУЩЕЙ ВКЛАДКИ ===
   function loadMarketsCache() {
     try {
       const key = getCacheKey();
@@ -47,6 +48,7 @@ const MarketsPage = (() => {
     }
   }
 
+  // === ОЧИСТКА КЭША ЦЕН ПРИ ПЕРЕКЛЮЧЕНИИ ===
   function clearPriceCache() {
     priceCache = {};
   }
@@ -147,6 +149,9 @@ const MarketsPage = (() => {
       <div id="markets-list">Загрузка...</div>
     `;
 
+    // === ОЧИЩАЕМ КЭШ ЦЕН ПРИ ЗАГРУЗКЕ ===
+    clearPriceCache();
+
     renderTabs();
 
     // Показываем кэш для текущей вкладки (если есть)
@@ -235,9 +240,13 @@ const MarketsPage = (() => {
         searchQuery = '';
         const searchInput = Utils.el('market-search');
         if (searchInput) searchInput.value = '';
+        
+        // === КРИТИЧНО: ОЧИЩАЕМ КЭШ ЦЕН ПРИ ПЕРЕКЛЮЧЕНИИ ===
         clearPriceCache();
+        
         renderTabs();
-        // При переключении вкладки - показываем её кэш, потом обновляем
+        
+        // Показываем кэш для НОВОЙ вкладки
         const cache = loadMarketsCache();
         const list = Utils.el('markets-list');
         if (cache && cache.markets && cache.markets.length && list) {
@@ -247,6 +256,8 @@ const MarketsPage = (() => {
           list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
           updateStatus('⏳ Загрузка...', 'var(--text-muted)');
         }
+        
+        // Принудительно обновляем
         refreshMarkets(true);
       });
     });
@@ -259,9 +270,13 @@ const MarketsPage = (() => {
         searchQuery = '';
         const searchInput = Utils.el('market-search');
         if (searchInput) searchInput.value = '';
+        
+        // === КРИТИЧНО: ОЧИЩАЕМ КЭШ ЦЕН ПРИ ПЕРЕКЛЮЧЕНИИ ===
         clearPriceCache();
+        
         renderTabs();
-        // При переключении подвкладки - показываем её кэш, потом обновляем
+        
+        // Показываем кэш для НОВОЙ подвкладки
         const cache = loadMarketsCache();
         const list = Utils.el('markets-list');
         if (cache && cache.markets && cache.markets.length && list) {
@@ -271,6 +286,8 @@ const MarketsPage = (() => {
           list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
           updateStatus('⏳ Загрузка...', 'var(--text-muted)');
         }
+        
+        // Принудительно обновляем
         refreshMarkets(true);
       });
     });
