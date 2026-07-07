@@ -6,14 +6,21 @@ const MarketsPage = (() => {
   let priceCache = {};
   let isLoading = false;
 
-  // === КЭШ ДЛЯ РЫНКОВ ===
-  const CACHE_KEY = 'nova_markets_cache';
-  let lastUpdateTime = 0;
+  // === КЭШ ДЛЯ РЫНКОВ (ОТДЕЛЬНО ДЛЯ КАЖДОЙ ВКЛАДКИ) ===
+  const CACHE_KEY_PREFIX = 'nova_markets_cache_';
   let isUpdating = false;
+
+  function getCacheKey() {
+    if (currentTab === 'stocks') {
+      return `${CACHE_KEY_PREFIX}${currentTab}_${currentSubTab}`;
+    }
+    return `${CACHE_KEY_PREFIX}${currentTab}`;
+  }
 
   function loadMarketsCache() {
     try {
-      const raw = localStorage.getItem(CACHE_KEY);
+      const key = getCacheKey();
+      const raw = localStorage.getItem(key);
       if (raw) {
         const data = JSON.parse(raw);
         if (data && data.markets && data.markets.length) {
@@ -26,12 +33,13 @@ const MarketsPage = (() => {
     return null;
   }
 
-  function saveMarketsCache(markets, tab, subTab) {
+  function saveMarketsCache(markets) {
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
+      const key = getCacheKey();
+      localStorage.setItem(key, JSON.stringify({
         markets: markets,
-        tab: tab,
-        subTab: subTab,
+        tab: currentTab,
+        subTab: currentSubTab,
         timestamp: Date.now(),
       }));
     } catch (e) {
@@ -139,6 +147,8 @@ const MarketsPage = (() => {
       <div id="markets-list">Загрузка...</div>
     `;
 
+    renderTabs();
+
     // === ПОКАЗЫВАЕМ КЭШ СРАЗУ ===
     const cache = loadMarketsCache();
     if (cache && cache.markets && cache.markets.length) {
@@ -147,8 +157,6 @@ const MarketsPage = (() => {
         list.innerHTML = renderMarketsList(cache.markets);
       }
     }
-
-    renderTabs();
 
     const searchInput = Utils.el('market-search');
     if (searchInput) {
@@ -285,7 +293,6 @@ const MarketsPage = (() => {
         statusEl.style.color = 'var(--blue-primary)';
       }
 
-      // Загружаем свежие данные через существующую логику
       const symbols = getCurrentSymbols();
       if (symbols && symbols.length > 0) {
         // Очищаем кэш цен, чтобы принудительно обновить
@@ -299,17 +306,15 @@ const MarketsPage = (() => {
           type: currentTab
         }));
 
-        // Сортируем
         results.sort((a, b) => {
           if (a.price > 0 && b.price === 0) return -1;
           if (a.price === 0 && b.price > 0) return 1;
           return a.symbol.localeCompare(b.symbol);
         });
 
-        // Сохраняем в кэш
-        saveMarketsCache(results, currentTab, currentSubTab);
+        // Сохраняем в кэш (отдельный для каждой вкладки)
+        saveMarketsCache(results);
 
-        // Обновляем UI
         if (list) {
           list.innerHTML = renderMarketsList(results);
         }
@@ -327,7 +332,6 @@ const MarketsPage = (() => {
         statusEl.innerHTML = '⚠️ Ошибка обновления, показываем кэш';
         statusEl.style.color = 'var(--red)';
       }
-      // Показываем кэш
       const cache = loadMarketsCache();
       if (cache && cache.markets && cache.markets.length && list) {
         list.innerHTML = renderMarketsList(cache.markets);
@@ -354,11 +358,11 @@ const MarketsPage = (() => {
     const spinner = Utils.el('search-spinner');
     if (spinner) spinner.style.display = 'none';
 
-    // Сначала показываем кэш
+    // Сначала показываем кэш (отдельный для текущей вкладки)
     const cache = loadMarketsCache();
     if (cache && cache.markets && cache.markets.length && !searchQuery) {
       list.innerHTML = renderMarketsList(cache.markets);
-    } else {
+    } else if (!searchQuery) {
       list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
     }
 
@@ -402,12 +406,14 @@ const MarketsPage = (() => {
         let symbols = getCurrentSymbols();
 
         if (symbols && symbols.length > 0) {
-          // Очищаем кэш цен, если он старше 30 секунд
+          // Проверяем кэш для текущей вкладки
           const cacheData = loadMarketsCache();
-          if (cacheData && cacheData.timestamp && (Date.now() - cacheData.timestamp) < 30000) {
-            // Используем кэш
+          if (cacheData && cacheData.markets && cacheData.markets.length && 
+              cacheData.timestamp && (Date.now() - cacheData.timestamp) < 30000) {
+            // Используем кэш (если он свежий)
             results = cacheData.markets;
           } else {
+            // Загружаем свежие данные
             const prices = await fetchPrices(symbols);
             results = symbols.map(sym => ({
               symbol: sym,
@@ -416,8 +422,8 @@ const MarketsPage = (() => {
               change: prices[sym]?.change || null,
               type: currentTab
             }));
-            // Сохраняем в кэш
-            saveMarketsCache(results, currentTab, currentSubTab);
+            // Сохраняем в отдельный кэш для текущей вкладки
+            saveMarketsCache(results);
           }
         }
       }
@@ -443,7 +449,6 @@ const MarketsPage = (() => {
 
     isLoading = false;
   }
-  // jjj
 
   return { render };
 })();
