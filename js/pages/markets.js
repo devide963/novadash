@@ -61,6 +61,17 @@ const MarketsPage = (() => {
   async function fetchPrice(symbol) {
     if (priceCache[symbol]) return priceCache[symbol];
     try {
+      // Для российских акций используем getStock
+      if (currentTab === 'stocks' && currentSubTab === 'ru') {
+        const data = await Backend.getStock(symbol);
+        if (data && data.price) {
+          const change = data.change !== undefined && data.change !== null ? data.change : null;
+          priceCache[symbol] = { price: data.price, change: change };
+          return priceCache[symbol];
+        }
+      }
+      
+      // Для крипты и американских акций
       let data = await Backend.getPrice(symbol);
       if (data && data.price) {
         const change = data.change !== undefined && data.change !== null ? data.change : null;
@@ -253,12 +264,28 @@ const MarketsPage = (() => {
       return '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных для отображения</div>';
     }
 
+    // Определяем валюту для текущей вкладки
+    const isRuStocks = currentTab === 'stocks' && currentSubTab === 'ru';
+    const currencySymbol = isRuStocks ? '₽' : '$';
+
     return results.slice(0, 300).map(item => {
       const changeValue = item.change;
       const changeColor = changeValue !== null && changeValue !== undefined && changeValue > 0 ? 'change-positive' : 
                          changeValue !== null && changeValue !== undefined && changeValue < 0 ? 'change-negative' : '';
       const changeText = changeValue !== null && changeValue !== undefined ? (changeValue > 0 ? '+' : '') + changeValue.toFixed(2) + '%' : '—';
-      const priceText = item.price > 0 ? '$' + Utils.formatPrice(item.price) : '—';
+      
+      // Форматируем цену с валютой
+      let priceText = '—';
+      if (item.price > 0) {
+        if (isRuStocks) {
+          // Для российских акций — рубли, без десятичных знаков
+          priceText = currencySymbol + Math.round(item.price).toLocaleString('ru-RU');
+        } else {
+          // Для крипты и американских акций — доллары
+          priceText = currencySymbol + Utils.formatPrice(item.price);
+        }
+      }
+      
       let type = currentTab;
       if (currentTab === 'stocks') type = 'stocks';
       return `
@@ -312,7 +339,7 @@ const MarketsPage = (() => {
           return a.symbol.localeCompare(b.symbol);
         });
 
-        // Сохраняем в кэш (отдельный для каждой вкладки)
+        // Сохраняем в отдельный кэш для текущей вкладки
         saveMarketsCache(results);
 
         if (list) {
@@ -349,7 +376,7 @@ const MarketsPage = (() => {
     return POPULAR.forex;
   }
 
-  // === ИЗМЕНЁННЫЙ renderTab С ИСПОЛЬЗОВАНИЕМ КЭША ===
+  // === ИЗМЕНЁННЫЙ renderTab ===
   async function renderTab() {
     if (isLoading) return;
     isLoading = true;
