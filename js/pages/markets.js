@@ -100,7 +100,7 @@ const MarketsPage = (() => {
     return results;
   }
 
-  // === ПОИСК ЧЕРЕЗ TRADINGVIEW (РАБОТАЕТ ДЛЯ ЛЮБЫХ АКТИВОВ) ===
+  // === ПОИСК ЧЕРЕЗ TRADINGVIEW ===
   async function searchTV(query, type) {
     if (!query || query.length < 1) return [];
     try {
@@ -109,7 +109,7 @@ const MarketsPage = (() => {
       if (!resp.ok) return [];
       const data = await resp.json();
       return data.map(item => ({
-        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', '').replace('MOEX:', '').replace('FOREXCOM:', '').replace('FX_IDC:', ''),
+        symbol: item.symbol.replace('BINANCE:', '').replace('NASDAQ:', '').replace('AMEX:', '').replace('MOEX:', ''),
         fullName: item.description,
         type: item.type
       }));
@@ -163,28 +163,30 @@ const MarketsPage = (() => {
       searchInput.addEventListener('input', (e) => {
         clearTimeout(debounceTimer);
         const val = e.target.value.trim().toUpperCase();
-        searchQuery = val;
+        const spinner = Utils.el('search-spinner');
+        
         if (val.length < 1) {
-          // Если поиск пустой — показываем список вкладки
+          searchQuery = '';
+          if (spinner) spinner.style.display = 'none';
           refreshMarkets(true);
           return;
         }
-        // Поиск через TradingView
+        
+        if (spinner) spinner.style.display = 'block';
+        
         debounceTimer = setTimeout(() => {
-          performSearch(val);
-        }, 300);
+          searchQuery = val;
+          if (spinner) spinner.style.display = 'none';
+          refreshMarkets(true);
+        }, 400);
       });
     }
 
-    // Принудительно обновляем при открытии
     await refreshMarkets(true);
 
     if (window.marketsUpdateInterval) clearInterval(window.marketsUpdateInterval);
     window.marketsUpdateInterval = setInterval(() => {
-      // Не обновляем если активен поиск
-      if (!searchQuery || searchQuery.length < 1) {
-        refreshMarkets(false);
-      }
+      refreshMarkets(false);
     }, 30000);
   }
 
@@ -327,33 +329,29 @@ const MarketsPage = (() => {
     }).join('');
   }
 
-  // === ПОИСК ЛЮБЫХ АКТИВОВ ЧЕРЕЗ TRADINGVIEW ===
-  async function performSearch(query) {
-    if (isUpdating) return;
-    isUpdating = true;
-
-    const list = Utils.el('markets-list');
+  // === ПОИСК ЛЮБОГО АКТИВА ===
+  async function handleSearch(list) {
     const spinner = Utils.el('search-spinner');
+    if (spinner) spinner.style.display = 'block';
     
     try {
-      if (spinner) spinner.style.display = 'block';
-      updateStatus('🔍 Поиск...', 'var(--blue-primary)');
-
-      // Сначала пробуем получить цену напрямую через бекенд
-      const priceData = await fetchPrice(query);
+      updateStatus(`🔍 Поиск "${searchQuery}"...`, 'var(--blue-primary)');
+      
+      // 1. Пробуем получить цену напрямую через бекенд
+      const priceData = await fetchPrice(searchQuery);
       let results = [];
 
       if (priceData && priceData.price > 0) {
         results = [{
-          symbol: query,
-          fullName: query,
+          symbol: searchQuery,
+          fullName: searchQuery,
           price: priceData.price,
           change: priceData.change,
           type: currentTab
         }];
       } else {
-        // Если не нашлось — ищем через TradingView
-        const tvResults = await searchTV(query, currentTab === 'crypto' ? 'crypto' : 'stock');
+        // 2. Если не нашлось — ищем через TradingView
+        const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : 'stock');
         if (tvResults && tvResults.length > 0) {
           const prices = await fetchPrices(tvResults.map(item => item.symbol));
           results = tvResults.map(item => ({
@@ -369,9 +367,8 @@ const MarketsPage = (() => {
       if (spinner) spinner.style.display = 'none';
 
       if (!results || results.length === 0) {
-        list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${query}"</div>`;
-        updateStatus(`🔍 Ничего не найдено`, 'var(--red)');
-        isUpdating = false;
+        list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
+        updateStatus(`🔍 Ничего не найдено`, 'var(--text-muted)');
         return;
       }
 
@@ -382,7 +379,7 @@ const MarketsPage = (() => {
       });
 
       list.innerHTML = renderMarketsList(results);
-      updateStatus(`🔍 Найдено ${results.length} результатов`, 'var(--text-muted)');
+      updateStatus(`🔍 Найдено ${results.length} результатов для "${searchQuery}"`, 'var(--text-muted)');
 
     } catch (e) {
       console.error('Ошибка поиска:', e);
@@ -390,22 +387,22 @@ const MarketsPage = (() => {
       list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка поиска</div>';
       updateStatus('⚠️ Ошибка поиска', 'var(--red)');
     }
-
-    isUpdating = false;
   }
 
   async function refreshMarkets(force = false) {
-    // Если есть активный поиск — не обновляем список
-    if (searchQuery && searchQuery.length >= 1) {
-      return;
-    }
-
     if (isUpdating) return;
     isUpdating = true;
 
     const list = Utils.el('markets-list');
     
     try {
+      // === ЕСЛИ ЕСТЬ ПОИСК — ВЫПОЛНЯЕМ ЕГО ===
+      if (searchQuery && searchQuery.length >= 1) {
+        await handleSearch(list);
+        isUpdating = false;
+        return;
+      }
+
       updateStatus('🔄 Обновление цен...', 'var(--blue-primary)');
 
       const symbols = getCurrentSymbols();
