@@ -47,7 +47,6 @@ const MarketsPage = (() => {
     }
   }
 
-  // === ОЧИСТКА КЭША ПРИ ПЕРЕКЛЮЧЕНИИ ВКЛАДКИ ===
   function clearPriceCache() {
     priceCache = {};
   }
@@ -150,11 +149,12 @@ const MarketsPage = (() => {
 
     renderTabs();
 
-    // Сразу показываем кэш
+    // Показываем кэш для текущей вкладки (если есть)
     const cache = loadMarketsCache();
     const list = Utils.el('markets-list');
     if (cache && cache.markets && cache.markets.length && list) {
       list.innerHTML = renderMarketsList(cache.markets);
+      updateStatus('📊 Данные из кэша', 'var(--text-muted)');
     }
 
     const searchInput = Utils.el('market-search');
@@ -165,12 +165,12 @@ const MarketsPage = (() => {
         const val = e.target.value.trim().toUpperCase();
         if (val.length < 1) {
           searchQuery = '';
-          renderTab();
+          refreshMarkets(true);
           return;
         }
         debounceTimer = setTimeout(() => {
           searchQuery = val;
-          renderTab();
+          refreshMarkets(true);
         }, 300);
       });
     }
@@ -182,6 +182,14 @@ const MarketsPage = (() => {
     window.marketsUpdateInterval = setInterval(() => {
       refreshMarkets(false);
     }, 30000);
+  }
+
+  function updateStatus(text, color = 'var(--text-muted)') {
+    const statusEl = Utils.el('markets-update-status');
+    if (statusEl) {
+      statusEl.innerHTML = text;
+      statusEl.style.color = color;
+    }
   }
 
   function renderTabs() {
@@ -229,7 +237,16 @@ const MarketsPage = (() => {
         if (searchInput) searchInput.value = '';
         clearPriceCache();
         renderTabs();
-        // При переключении вкладки - принудительно обновляем
+        // При переключении вкладки - показываем её кэш, потом обновляем
+        const cache = loadMarketsCache();
+        const list = Utils.el('markets-list');
+        if (cache && cache.markets && cache.markets.length && list) {
+          list.innerHTML = renderMarketsList(cache.markets);
+          updateStatus('📊 Данные из кэша', 'var(--text-muted)');
+        } else if (list) {
+          list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
+          updateStatus('⏳ Загрузка...', 'var(--text-muted)');
+        }
         refreshMarkets(true);
       });
     });
@@ -244,7 +261,16 @@ const MarketsPage = (() => {
         if (searchInput) searchInput.value = '';
         clearPriceCache();
         renderTabs();
-        // При переключении подвкладки - принудительно обновляем
+        // При переключении подвкладки - показываем её кэш, потом обновляем
+        const cache = loadMarketsCache();
+        const list = Utils.el('markets-list');
+        if (cache && cache.markets && cache.markets.length && list) {
+          list.innerHTML = renderMarketsList(cache.markets);
+          updateStatus('📊 Данные из кэша', 'var(--text-muted)');
+        } else if (list) {
+          list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
+          updateStatus('⏳ Загрузка...', 'var(--text-muted)');
+        }
         refreshMarkets(true);
       });
     });
@@ -297,72 +323,73 @@ const MarketsPage = (() => {
     if (isUpdating) return;
     isUpdating = true;
 
-    const statusEl = Utils.el('markets-update-status');
     const list = Utils.el('markets-list');
     
     try {
-      if (statusEl) {
-        statusEl.innerHTML = '🔄 Обновление цен...';
-        statusEl.style.color = 'var(--blue-primary)';
+      updateStatus('🔄 Обновление цен...', 'var(--blue-primary)');
+
+      // Если поиск — загружаем поиск
+      if (searchQuery && searchQuery.length >= 1) {
+        await handleSearch(list);
+        isUpdating = false;
+        return;
       }
 
       const symbols = getCurrentSymbols();
-      if (symbols && symbols.length > 0) {
-        // Проверяем кэш
-        const cacheData = loadMarketsCache();
-        const cacheAge = cacheData?.timestamp ? Date.now() - cacheData.timestamp : Infinity;
-        
-        // Если кэш свежий (менее 30 сек) и не принудительно — используем его
-        if (!force && cacheData && cacheData.markets && cacheData.markets.length && cacheAge < 30000) {
-          if (list) {
-            list.innerHTML = renderMarketsList(cacheData.markets);
-          }
-          const now = new Date();
-          const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          if (statusEl) {
-            statusEl.innerHTML = `📊 Данные из кэша (${timeStr})`;
-            statusEl.style.color = 'var(--text-muted)';
-          }
-          isUpdating = false;
-          return;
-        }
+      if (!symbols || symbols.length === 0) {
+        if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет символов для отображения</div>';
+        isUpdating = false;
+        return;
+      }
 
-        // Загружаем свежие данные
-        clearPriceCache();
-        const prices = await fetchPrices(symbols);
-        const results = symbols.map(sym => ({
-          symbol: sym,
-          fullName: sym,
-          price: prices[sym]?.price || 0,
-          change: prices[sym]?.change || null,
-          type: currentTab
-        }));
-
-        results.sort((a, b) => {
-          if (a.price > 0 && b.price === 0) return -1;
-          if (a.price === 0 && b.price > 0) return 1;
-          return a.symbol.localeCompare(b.symbol);
-        });
-
-        saveMarketsCache(results);
-
+      // Проверяем кэш для ТЕКУЩЕЙ вкладки
+      const cacheData = loadMarketsCache();
+      const cacheAge = cacheData?.timestamp ? Date.now() - cacheData.timestamp : Infinity;
+      
+      // Если кэш свежий (менее 30 сек) и не принудительно — используем его
+      if (!force && cacheData && cacheData.markets && cacheData.markets.length && cacheAge < 30000) {
         if (list) {
-          list.innerHTML = renderMarketsList(results);
+          list.innerHTML = renderMarketsList(cacheData.markets);
         }
-
         const now = new Date();
         const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        if (statusEl) {
-          statusEl.innerHTML = `✅ Обновлено в ${timeStr}`;
-          statusEl.style.color = 'var(--text-muted)';
-        }
+        updateStatus(`📊 Данные из кэша (${timeStr})`, 'var(--text-muted)');
+        isUpdating = false;
+        return;
       }
+
+      // Загружаем свежие данные
+      clearPriceCache();
+      const prices = await fetchPrices(symbols);
+      const results = symbols.map(sym => ({
+        symbol: sym,
+        fullName: sym,
+        price: prices[sym]?.price || 0,
+        change: prices[sym]?.change || null,
+        type: currentTab
+      }));
+
+      results.sort((a, b) => {
+        if (a.price > 0 && b.price === 0) return -1;
+        if (a.price === 0 && b.price > 0) return 1;
+        return a.symbol.localeCompare(b.symbol);
+      });
+
+      // Сохраняем в ОТДЕЛЬНЫЙ кэш для текущей вкладки
+      saveMarketsCache(results);
+
+      if (list) {
+        list.innerHTML = renderMarketsList(results);
+      }
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      updateStatus(`✅ Обновлено в ${timeStr}`, 'var(--text-muted)');
+
     } catch (e) {
       console.warn('Ошибка обновления рынков:', e);
-      if (statusEl) {
-        statusEl.innerHTML = '⚠️ Ошибка обновления, показываем кэш';
-        statusEl.style.color = 'var(--red)';
-      }
+      updateStatus('⚠️ Ошибка обновления, показываем кэш', 'var(--red)');
+      
       const cache = loadMarketsCache();
       if (cache && cache.markets && cache.markets.length && list) {
         list.innerHTML = renderMarketsList(cache.markets);
@@ -372,16 +399,60 @@ const MarketsPage = (() => {
     isUpdating = false;
   }
 
+  async function handleSearch(list) {
+    try {
+      const priceData = await fetchPrice(searchQuery);
+      let results = [];
+
+      if (priceData && priceData.price > 0) {
+        results = [{
+          symbol: searchQuery,
+          fullName: searchQuery,
+          price: priceData.price,
+          change: priceData.change,
+          type: currentTab
+        }];
+      } else {
+        const tvResults = await searchTV(searchQuery, currentTab === 'crypto' ? 'crypto' : 'stock');
+        if (tvResults && tvResults.length > 0) {
+          const prices = await fetchPrices(tvResults.map(item => item.symbol));
+          results = tvResults.map(item => ({
+            symbol: item.symbol,
+            fullName: item.fullName || item.symbol,
+            price: prices[item.symbol]?.price || 0,
+            change: prices[item.symbol]?.change || null,
+            type: currentTab
+          }));
+        }
+      }
+
+      if (!results || results.length === 0) {
+        list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted)">Ничего не найдено для "${searchQuery}"</div>`;
+        updateStatus('🔍 Результаты поиска', 'var(--text-muted)');
+        return;
+      }
+
+      results.sort((a, b) => {
+        if (a.price > 0 && b.price === 0) return -1;
+        if (a.price === 0 && b.price > 0) return 1;
+        return a.symbol.localeCompare(b.symbol);
+      });
+
+      list.innerHTML = renderMarketsList(results);
+      updateStatus(`🔍 Найдено ${results.length} результатов`, 'var(--text-muted)');
+
+    } catch (e) {
+      console.error('Ошибка поиска:', e);
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Ошибка поиска</div>';
+    }
+  }
+
   function getCurrentSymbols() {
     if (currentTab === 'crypto') return POPULAR.crypto;
     if (currentTab === 'stocks') {
       return currentSubTab === 'usa' ? POPULAR.usa_stocks : POPULAR.ru_stocks;
     }
     return POPULAR.forex;
-  }
-
-  async function renderTab() {
-    await refreshMarkets(true);
   }
 
   return { render };
