@@ -6,7 +6,6 @@ const MarketsPage = (() => {
   let priceCache = {};
   let isLoading = false;
 
-  // === КЭШ ===
   const CACHE_KEY_PREFIX = 'nova_markets_cache_';
   let isUpdating = false;
 
@@ -17,7 +16,6 @@ const MarketsPage = (() => {
     return `${CACHE_KEY_PREFIX}${currentTab}`;
   }
 
-  // === ЗАГРУЗКА КЭША ДЛЯ ТЕКУЩЕЙ ВКЛАДКИ ===
   function loadMarketsCache() {
     try {
       const key = getCacheKey();
@@ -48,7 +46,6 @@ const MarketsPage = (() => {
     }
   }
 
-  // === ОЧИСТКА КЭША ЦЕН ПРИ ПЕРЕКЛЮЧЕНИИ ===
   function clearPriceCache() {
     priceCache = {};
   }
@@ -149,12 +146,9 @@ const MarketsPage = (() => {
       <div id="markets-list">Загрузка...</div>
     `;
 
-    // === ОЧИЩАЕМ КЭШ ЦЕН ПРИ ЗАГРУЗКЕ ===
     clearPriceCache();
-
     renderTabs();
 
-    // Показываем кэш для текущей вкладки (если есть)
     const cache = loadMarketsCache();
     const list = Utils.el('markets-list');
     if (cache && cache.markets && cache.markets.length && list) {
@@ -180,7 +174,6 @@ const MarketsPage = (() => {
       });
     }
 
-    // Принудительно обновляем при открытии
     await refreshMarkets(true);
 
     if (window.marketsUpdateInterval) clearInterval(window.marketsUpdateInterval);
@@ -241,12 +234,9 @@ const MarketsPage = (() => {
         const searchInput = Utils.el('market-search');
         if (searchInput) searchInput.value = '';
         
-        // === КРИТИЧНО: ОЧИЩАЕМ КЭШ ЦЕН ПРИ ПЕРЕКЛЮЧЕНИИ ===
         clearPriceCache();
-        
         renderTabs();
         
-        // Показываем кэш для НОВОЙ вкладки
         const cache = loadMarketsCache();
         const list = Utils.el('markets-list');
         if (cache && cache.markets && cache.markets.length && list) {
@@ -257,7 +247,6 @@ const MarketsPage = (() => {
           updateStatus('⏳ Загрузка...', 'var(--text-muted)');
         }
         
-        // Принудительно обновляем
         refreshMarkets(true);
       });
     });
@@ -271,12 +260,9 @@ const MarketsPage = (() => {
         const searchInput = Utils.el('market-search');
         if (searchInput) searchInput.value = '';
         
-        // === КРИТИЧНО: ОЧИЩАЕМ КЭШ ЦЕН ПРИ ПЕРЕКЛЮЧЕНИИ ===
         clearPriceCache();
-        
         renderTabs();
         
-        // Показываем кэш для НОВОЙ подвкладки
         const cache = loadMarketsCache();
         const list = Utils.el('markets-list');
         if (cache && cache.markets && cache.markets.length && list) {
@@ -287,7 +273,6 @@ const MarketsPage = (() => {
           updateStatus('⏳ Загрузка...', 'var(--text-muted)');
         }
         
-        // Принудительно обновляем
         refreshMarkets(true);
       });
     });
@@ -345,7 +330,6 @@ const MarketsPage = (() => {
     try {
       updateStatus('🔄 Обновление цен...', 'var(--blue-primary)');
 
-      // Если поиск — загружаем поиск
       if (searchQuery && searchQuery.length >= 1) {
         await handleSearch(list);
         isUpdating = false;
@@ -359,11 +343,9 @@ const MarketsPage = (() => {
         return;
       }
 
-      // Проверяем кэш для ТЕКУЩЕЙ вкладки
       const cacheData = loadMarketsCache();
       const cacheAge = cacheData?.timestamp ? Date.now() - cacheData.timestamp : Infinity;
       
-      // Если кэш свежий (менее 30 сек) и не принудительно — используем его
       if (!force && cacheData && cacheData.markets && cacheData.markets.length && cacheAge < 30000) {
         if (list) {
           list.innerHTML = renderMarketsList(cacheData.markets);
@@ -375,7 +357,6 @@ const MarketsPage = (() => {
         return;
       }
 
-      // Загружаем свежие данные
       clearPriceCache();
       const prices = await fetchPrices(symbols);
       const results = symbols.map(sym => ({
@@ -392,7 +373,6 @@ const MarketsPage = (() => {
         return a.symbol.localeCompare(b.symbol);
       });
 
-      // Сохраняем в ОТДЕЛЬНЫЙ кэш для текущей вкладки
       saveMarketsCache(results);
 
       if (list) {
