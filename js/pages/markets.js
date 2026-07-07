@@ -58,10 +58,11 @@ const MarketsPage = (() => {
     }
   }
 
+  // === ИСПРАВЛЕННАЯ ФУНКЦИЯ fetchPrice ===
   async function fetchPrice(symbol) {
     if (priceCache[symbol]) return priceCache[symbol];
     try {
-      // Для российских акций используем getStock
+      // === ЕСЛИ РОССИЙСКАЯ АКЦИЯ — ТОЛЬКО getStock ===
       if (currentTab === 'stocks' && currentSubTab === 'ru') {
         const data = await Backend.getStock(symbol);
         if (data && data.price) {
@@ -69,21 +70,26 @@ const MarketsPage = (() => {
           priceCache[symbol] = { price: data.price, change: change };
           return priceCache[symbol];
         }
+        priceCache[symbol] = { price: 0, change: null };
+        return priceCache[symbol];
       }
       
-      // Для крипты и американских акций
+      // === КРИПТА И АМЕРИКАНСКИЕ АКЦИИ ===
       let data = await Backend.getPrice(symbol);
       if (data && data.price) {
         const change = data.change !== undefined && data.change !== null ? data.change : null;
         priceCache[symbol] = { price: data.price, change: change };
         return priceCache[symbol];
       }
+      
+      // Если не нашлось — пробуем getStock (для американских акций)
       data = await Backend.getStock(symbol);
       if (data && data.price) {
         const change = data.change !== undefined && data.change !== null ? data.change : null;
         priceCache[symbol] = { price: data.price, change: change };
         return priceCache[symbol];
       }
+      
       priceCache[symbol] = { price: 0, change: null };
       return priceCache[symbol];
     } catch (e) {
@@ -138,7 +144,6 @@ const MarketsPage = (() => {
     page.innerHTML = `
       <div class="section-title mb-12">Рынки</div>
       
-      <!-- Индикатор обновления -->
       <div id="markets-update-status" style="text-align:right;font-size:11px;color:var(--text-muted);padding:4px 0;margin-bottom:4px;">
         ${loadMarketsCache() ? '📊 Данные из кэша' : '⏳ Загрузка...'}
       </div>
@@ -151,16 +156,12 @@ const MarketsPage = (() => {
         <div id="search-spinner" style="display:none;width:16px;height:16px;border:2px solid var(--glass-border);border-top-color:var(--blue-primary);border-radius:50%;animation:spin .7s linear infinite"></div>
       </div>
 
-      <div class="tabs-container" id="tabs-container">
-        <!-- Сюда будем рендерить вкладки -->
-      </div>
-
+      <div class="tabs-container" id="tabs-container"></div>
       <div id="markets-list">Загрузка...</div>
     `;
 
     renderTabs();
 
-    // === ПОКАЗЫВАЕМ КЭШ СРАЗУ ===
     const cache = loadMarketsCache();
     if (cache && cache.markets && cache.markets.length) {
       const list = Utils.el('markets-list');
@@ -189,7 +190,6 @@ const MarketsPage = (() => {
 
     await renderTab();
 
-    // === АВТООБНОВЛЕНИЕ КАЖДЫЕ 30 СЕКУНД ===
     if (window.marketsUpdateInterval) clearInterval(window.marketsUpdateInterval);
     window.marketsUpdateInterval = setInterval(() => {
       refreshMarkets();
@@ -258,13 +258,12 @@ const MarketsPage = (() => {
     });
   }
 
-  // === ОТДЕЛЬНАЯ ФУНКЦИЯ ДЛЯ РЕНДЕРА СПИСКА ===
+  // === ИСПРАВЛЕННАЯ ФУНКЦИЯ РЕНДЕРА СПИСКА ===
   function renderMarketsList(results) {
     if (!results || results.length === 0) {
       return '<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных для отображения</div>';
     }
 
-    // Определяем валюту для текущей вкладки
     const isRuStocks = currentTab === 'stocks' && currentSubTab === 'ru';
     const currencySymbol = isRuStocks ? '₽' : '$';
 
@@ -274,14 +273,11 @@ const MarketsPage = (() => {
                          changeValue !== null && changeValue !== undefined && changeValue < 0 ? 'change-negative' : '';
       const changeText = changeValue !== null && changeValue !== undefined ? (changeValue > 0 ? '+' : '') + changeValue.toFixed(2) + '%' : '—';
       
-      // Форматируем цену с валютой
       let priceText = '—';
       if (item.price > 0) {
         if (isRuStocks) {
-          // Для российских акций — рубли, без десятичных знаков
           priceText = currencySymbol + Math.round(item.price).toLocaleString('ru-RU');
         } else {
-          // Для крипты и американских акций — доллары
           priceText = currencySymbol + Utils.formatPrice(item.price);
         }
       }
@@ -306,7 +302,6 @@ const MarketsPage = (() => {
     }).join('');
   }
 
-  // === ОБНОВЛЕНИЕ С ИНДИКАТОРОМ ===
   async function refreshMarkets() {
     if (isUpdating) return;
     isUpdating = true;
@@ -322,7 +317,6 @@ const MarketsPage = (() => {
 
       const symbols = getCurrentSymbols();
       if (symbols && symbols.length > 0) {
-        // Очищаем кэш цен, чтобы принудительно обновить
         priceCache = {};
         const prices = await fetchPrices(symbols);
         const results = symbols.map(sym => ({
@@ -339,7 +333,6 @@ const MarketsPage = (() => {
           return a.symbol.localeCompare(b.symbol);
         });
 
-        // Сохраняем в отдельный кэш для текущей вкладки
         saveMarketsCache(results);
 
         if (list) {
@@ -376,7 +369,6 @@ const MarketsPage = (() => {
     return POPULAR.forex;
   }
 
-  // === ИЗМЕНЁННЫЙ renderTab ===
   async function renderTab() {
     if (isLoading) return;
     isLoading = true;
@@ -385,7 +377,6 @@ const MarketsPage = (() => {
     const spinner = Utils.el('search-spinner');
     if (spinner) spinner.style.display = 'none';
 
-    // Сначала показываем кэш (отдельный для текущей вкладки)
     const cache = loadMarketsCache();
     if (cache && cache.markets && cache.markets.length && !searchQuery) {
       list.innerHTML = renderMarketsList(cache.markets);
@@ -433,14 +424,11 @@ const MarketsPage = (() => {
         let symbols = getCurrentSymbols();
 
         if (symbols && symbols.length > 0) {
-          // Проверяем кэш для текущей вкладки
           const cacheData = loadMarketsCache();
           if (cacheData && cacheData.markets && cacheData.markets.length && 
               cacheData.timestamp && (Date.now() - cacheData.timestamp) < 30000) {
-            // Используем кэш (если он свежий)
             results = cacheData.markets;
           } else {
-            // Загружаем свежие данные
             const prices = await fetchPrices(symbols);
             results = symbols.map(sym => ({
               symbol: sym,
@@ -449,7 +437,6 @@ const MarketsPage = (() => {
               change: prices[sym]?.change || null,
               type: currentTab
             }));
-            // Сохраняем в отдельный кэш для текущей вкладки
             saveMarketsCache(results);
           }
         }
